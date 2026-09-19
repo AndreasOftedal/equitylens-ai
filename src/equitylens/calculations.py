@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
 from equitylens.models import FinancialFact
+from equitylens.periods import ComparisonType, classify_period_labels
 
 
 @dataclass(frozen=True)
@@ -15,6 +16,7 @@ class FinancialChange:
     percentage_change: Decimal
     unit: str
     source_fact_ids: tuple[str, str]
+    comparison_type: ComparisonType = "other"
 
 
 def calculate_percentage_change(
@@ -24,8 +26,8 @@ def calculate_percentage_change(
     """
     Calculate a deterministic change between two financial facts.
 
-    The result retains lineage to both source facts so the calculation
-    can later be audited back to the original evidence.
+    The result retains lineage to both source facts and classifies the
+    temporal relationship between the reporting periods.
     """
 
     if current.metric != comparison.metric:
@@ -66,5 +68,9 @@ def calculate_percentage_change(
         source_fact_ids=(
             comparison.fact_id,
             current.fact_id,
+        ),
+        comparison_type=classify_period_labels(
+            from_period=comparison.period,
+            to_period=current.period,
         ),
     )
