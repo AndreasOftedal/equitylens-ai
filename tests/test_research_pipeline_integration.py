@@ -51,6 +51,16 @@ def _metric_results_by_id(
     }
 
 
+def _consistency_by_metric_id(
+    research_result,
+):
+    return {
+        assessment.metric_id: assessment
+        for assessment
+        in research_result.consistency_assessments
+    }
+
+
 def test_real_unified_pipeline_builds_analyst_report(
     research_result,
 ):
@@ -195,6 +205,73 @@ def test_real_unified_pipeline_respects_conservative_evidence_gate(
         adjusted_operating_income
         .expected_comparison_type
         == "qoq"
+    )
+
+
+def test_real_unified_pipeline_builds_conservative_consistency_assessments(
+    research_result,
+):
+    assessments = (
+        research_result
+        .consistency_assessments
+    )
+
+    by_metric = (
+        _consistency_by_metric_id(
+            research_result
+        )
+    )
+
+    assert len(
+        assessments
+    ) == 4
+
+    assert tuple(
+        assessment.metric_id
+        for assessment
+        in assessments
+    ) == METRIC_IDS
+
+    assert all(
+        assessment.comparison_type
+        == "qoq"
+        for assessment
+        in assessments
+    )
+
+    assert all(
+        assessment.status
+        == "insufficient_evidence"
+        for assessment
+        in assessments
+    )
+
+    assert (
+        by_metric[
+            "net_operating_income"
+        ].financial_direction
+        == "increase"
+    )
+
+    assert (
+        by_metric[
+            "net_income"
+        ].financial_direction
+        == "increase"
+    )
+
+    assert (
+        by_metric[
+            "adjusted_operating_income"
+        ].financial_direction
+        == "increase"
+    )
+
+    assert (
+        by_metric[
+            "adjusted_net_income"
+        ].financial_direction
+        == "decrease"
     )
 
 

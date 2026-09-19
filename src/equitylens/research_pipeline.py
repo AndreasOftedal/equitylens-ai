@@ -8,6 +8,10 @@ from equitylens.analyst_report import (
     AnalystReport,
     build_analyst_report,
 )
+from equitylens.consistency import (
+    ConsistencyAssessment,
+    assess_consistency,
+)
 from equitylens.evidence_pipeline import (
     build_evidence_assessments,
 )
@@ -24,6 +28,10 @@ from equitylens.parser import parse_pdf
 class UnifiedResearchResult:
     analyst_report: AnalystReport
     guidance_report: GuidanceReport
+    consistency_assessments: tuple[
+        ConsistencyAssessment,
+        ...
+    ]
 
 
 def build_equinor_research_result(
@@ -37,9 +45,9 @@ def build_equinor_research_result(
     Build one unified deterministic research result
     from two Equinor reporting periods.
 
-    Financial calculations, evidence assessment and
-    guidance tracking remain delegated to their
-    existing specialised pipelines.
+    Financial calculations, evidence assessment,
+    consistency assessment and guidance tracking
+    remain delegated to their specialised logic.
     """
 
     if (
@@ -112,6 +120,23 @@ def build_equinor_research_result(
         ),
     )
 
+    consistency_assessments = tuple(
+        assess_consistency(
+            metric_id=result.metric_id,
+            absolute_change=(
+                result.change.absolute_change
+            ),
+            comparison_type=(
+                result.change.comparison_type
+            ),
+            evidence_assessment=(
+                result.evidence_assessment
+            ),
+        )
+        for result
+        in analyst_report.metric_results
+    )
+
     guidance_report = (
         build_equinor_guidance_report(
             previous_document_id=(
@@ -128,4 +153,7 @@ def build_equinor_research_result(
     return UnifiedResearchResult(
         analyst_report=analyst_report,
         guidance_report=guidance_report,
+        consistency_assessments=(
+            consistency_assessments
+        ),
     )

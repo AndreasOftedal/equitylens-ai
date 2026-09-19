@@ -46,27 +46,53 @@ def test_unified_pipeline_connects_existing_components(
     )
 
     fake_dataset = object()
+
     fake_previous_pages = [
         SimpleNamespace(
             document_id="q1-document"
         )
     ]
+
     fake_current_pages = [
         SimpleNamespace(
             document_id="q2-document"
         )
     ]
+
+    fake_evidence_assessment = object()
+
     fake_evidence = {
-        "net_operating_income": object()
+        "net_operating_income": (
+            fake_evidence_assessment
+        )
     }
-    fake_analyst_report = object()
+
+    fake_metric_result = SimpleNamespace(
+        metric_id="net_operating_income",
+        change=SimpleNamespace(
+            absolute_change=100,
+            comparison_type="qoq",
+        ),
+        evidence_assessment=(
+            fake_evidence_assessment
+        ),
+    )
+
+    fake_analyst_report = SimpleNamespace(
+        metric_results=(
+            fake_metric_result,
+        )
+    )
+
     fake_guidance_report = object()
+    fake_consistency = object()
 
     dataset_calls = []
     parse_calls = []
     evidence_calls = []
     analyst_calls = []
     guidance_calls = []
+    consistency_calls = []
 
     def fake_build_dataset(
         sources,
@@ -78,6 +104,7 @@ def test_unified_pipeline_connects_existing_components(
                 metric_ids,
             )
         )
+
         return fake_dataset
 
     def fake_parse_pdf(
@@ -102,6 +129,7 @@ def test_unified_pipeline_connects_existing_components(
         evidence_calls.append(
             kwargs
         )
+
         return fake_evidence
 
     def fake_build_analyst(
@@ -110,6 +138,7 @@ def test_unified_pipeline_connects_existing_components(
         analyst_calls.append(
             kwargs
         )
+
         return fake_analyst_report
 
     def fake_build_guidance(
@@ -118,7 +147,17 @@ def test_unified_pipeline_connects_existing_components(
         guidance_calls.append(
             kwargs
         )
+
         return fake_guidance_report
+
+    def fake_assess_consistency(
+        **kwargs,
+    ):
+        consistency_calls.append(
+            kwargs
+        )
+
+        return fake_consistency
 
     monkeypatch.setattr(
         research_pipeline,
@@ -150,6 +189,12 @@ def test_unified_pipeline_connects_existing_components(
         fake_build_guidance,
     )
 
+    monkeypatch.setattr(
+        research_pipeline,
+        "assess_consistency",
+        fake_assess_consistency,
+    )
+
     result = (
         research_pipeline
         .build_equinor_research_result(
@@ -175,6 +220,11 @@ def test_unified_pipeline_connects_existing_components(
     assert (
         result.guidance_report
         is fake_guidance_report
+    )
+
+    assert (
+        result.consistency_assessments
+        == (fake_consistency,)
     )
 
     assert len(dataset_calls) == 1
@@ -247,6 +297,34 @@ def test_unified_pipeline_connects_existing_components(
         == "EQNR"
     )
 
+    assert len(consistency_calls) == 1
+
+    consistency_call = (
+        consistency_calls[0]
+    )
+
+    assert (
+        consistency_call["metric_id"]
+        == "net_operating_income"
+    )
+
+    assert (
+        consistency_call["absolute_change"]
+        == 100
+    )
+
+    assert (
+        consistency_call["comparison_type"]
+        == "qoq"
+    )
+
+    assert (
+        consistency_call[
+            "evidence_assessment"
+        ]
+        is fake_evidence_assessment
+    )
+
     assert len(guidance_calls) == 1
 
     guidance_call = (
@@ -311,6 +389,7 @@ def test_current_document_drives_narrative_evidence(
         evidence_pages.extend(
             kwargs["pages"]
         )
+
         return {}
 
     monkeypatch.setattr(
@@ -322,7 +401,9 @@ def test_current_document_drives_narrative_evidence(
     monkeypatch.setattr(
         research_pipeline,
         "build_analyst_report",
-        lambda **kwargs: object(),
+        lambda **kwargs: SimpleNamespace(
+            metric_results=()
+        ),
     )
 
     monkeypatch.setattr(
@@ -387,6 +468,7 @@ def test_reporting_periods_flow_from_documents(
         captured.update(
             kwargs
         )
+
         return {}
 
     monkeypatch.setattr(
@@ -398,7 +480,9 @@ def test_reporting_periods_flow_from_documents(
     monkeypatch.setattr(
         research_pipeline,
         "build_analyst_report",
-        lambda **kwargs: object(),
+        lambda **kwargs: SimpleNamespace(
+            metric_results=()
+        ),
     )
 
     monkeypatch.setattr(
@@ -432,6 +516,113 @@ def test_reporting_periods_flow_from_documents(
     assert (
         captured["to_period"]
         == "Q2 2026"
+    )
+
+
+def test_consistency_preserves_metric_order(
+    monkeypatch,
+):
+    previous_source, current_source = (
+        _sources()
+    )
+
+    monkeypatch.setattr(
+        research_pipeline,
+        "build_multi_period_financial_dataset",
+        lambda **kwargs: object(),
+    )
+
+    monkeypatch.setattr(
+        research_pipeline,
+        "parse_pdf",
+        lambda **kwargs: [],
+    )
+
+    monkeypatch.setattr(
+        research_pipeline,
+        "build_evidence_assessments",
+        lambda **kwargs: {},
+    )
+
+    metric_results = (
+        SimpleNamespace(
+            metric_id="metric_a",
+            change=SimpleNamespace(
+                absolute_change=10,
+                comparison_type="qoq",
+            ),
+            evidence_assessment=None,
+        ),
+        SimpleNamespace(
+            metric_id="metric_b",
+            change=SimpleNamespace(
+                absolute_change=-5,
+                comparison_type="qoq",
+            ),
+            evidence_assessment=None,
+        ),
+    )
+
+    monkeypatch.setattr(
+        research_pipeline,
+        "build_analyst_report",
+        lambda **kwargs: SimpleNamespace(
+            metric_results=metric_results
+        ),
+    )
+
+    monkeypatch.setattr(
+        research_pipeline,
+        "build_equinor_guidance_report",
+        lambda **kwargs: object(),
+    )
+
+    assessed_metric_ids = []
+
+    def fake_assess_consistency(
+        **kwargs,
+    ):
+        assessed_metric_ids.append(
+            kwargs["metric_id"]
+        )
+
+        return kwargs["metric_id"]
+
+    monkeypatch.setattr(
+        research_pipeline,
+        "assess_consistency",
+        fake_assess_consistency,
+    )
+
+    result = (
+        research_pipeline
+        .build_equinor_research_result(
+            previous_source=(
+                previous_source
+            ),
+            current_source=(
+                current_source
+            ),
+            company="Equinor",
+            ticker="EQNR",
+            metric_ids=(
+                "metric_a",
+                "metric_b",
+            ),
+        )
+    )
+
+    assert assessed_metric_ids == [
+        "metric_a",
+        "metric_b",
+    ]
+
+    assert (
+        result.consistency_assessments
+        == (
+            "metric_a",
+            "metric_b",
+        )
     )
 
 
