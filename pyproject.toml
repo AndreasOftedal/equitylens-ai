@@ -11,6 +11,7 @@ dependencies = [
     "pymupdf>=1.28,<2",
     "pymupdf4llm>=0.3,<1",
     "docling>=2,<3",
+    "openai>=3.16,<4",
 ]
 
 [project.optional-dependencies]
