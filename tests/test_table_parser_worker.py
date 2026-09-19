@@ -14,6 +14,11 @@ def test_parse_tables_retries_after_transient_worker_failure(
     pdf_path = tmp_path / "report.pdf"
     pdf_path.write_bytes(b"test-pdf")
 
+    monkeypatch.setattr(
+        "equitylens.table_parser.TABLE_CACHE_DIR",
+        tmp_path / "cache",
+    )
+
     attempts = 0
 
     def fake_run(command, **kwargs):
@@ -86,6 +91,11 @@ def test_parse_tables_raises_after_retry_is_exhausted(
 ):
     pdf_path = tmp_path / "report.pdf"
     pdf_path.write_bytes(b"test-pdf")
+
+    monkeypatch.setattr(
+        "equitylens.table_parser.TABLE_CACHE_DIR",
+        tmp_path / "cache",
+    )
 
     def fake_run(command, **kwargs):
         return subprocess.CompletedProcess(
