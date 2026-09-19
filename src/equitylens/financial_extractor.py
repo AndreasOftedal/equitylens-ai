@@ -1,5 +1,6 @@
 from decimal import Decimal, InvalidOperation
 
+from equitylens.metrics import MetricDefinition, get_metric_definition
 from equitylens.models import EvidenceRef, FinancialFact, ParsedTable
 
 
@@ -39,6 +40,81 @@ def _parse_decimal(raw_value: str) -> Decimal:
         ) from exc
 
 
+def _find_metric_row(
+    table: ParsedTable,
+    metric_definition: MetricDefinition,
+) -> tuple[tuple[str, ...], str]:
+    matches = [
+        (row, row[0].strip())
+        for row in table.rows
+        if row
+        and row[0].strip() in metric_definition.source_labels
+    ]
+
+    if len(matches) != 1:
+        raise ValueError(
+            f"Expected exactly one row for metric_id "
+            f"'{metric_definition.metric_id}', found {len(matches)}."
+        )
+
+    return matches[0]
+
+
+def extract_registered_financial_fact(
+    table: ParsedTable,
+    metric_id: str,
+    period: str,
+) -> FinancialFact:
+    """
+    Extract a registered financial metric deterministically.
+
+    The metric registry separates canonical EquityLens metrics from the
+    source-specific labels used in company reports.
+    """
+
+    metric_definition = get_metric_definition(metric_id)
+
+    column_index, source_column_label = _find_period_column(
+        table.columns,
+        period,
+    )
+
+    row, source_row_label = _find_metric_row(
+        table=table,
+        metric_definition=metric_definition,
+    )
+
+    if column_index >= len(row):
+        raise ValueError(
+            f"Metric '{metric_definition.metric_id}' does not contain "
+            f"column '{source_column_label}'."
+        )
+
+    raw_value = row[column_index]
+    value = _parse_decimal(raw_value)
+
+    fact_id = (
+        f"{table.document_id}-"
+        f"{metric_definition.metric_id}-"
+        f"{period.lower().replace(' ', '-')}"
+    )
+
+    return FinancialFact(
+        fact_id=fact_id,
+        metric=metric_definition.canonical_name,
+        period=period,
+        value=value,
+        unit=metric_definition.unit,
+        evidence=EvidenceRef(
+            document_id=table.document_id,
+            page_number=table.page_number,
+            table_number=table.table_number,
+            row_label=source_row_label,
+            column_label=source_column_label,
+        ),
+    )
+
+
 def extract_financial_fact(
     table: ParsedTable,
     metric: str,
@@ -48,8 +124,8 @@ def extract_financial_fact(
     """
     Extract a financial KPI deterministically from a parsed table.
 
-    Extraction is based on an exact metric row and a uniquely identified
-    reporting-period column. Unrelated columns in the parsed table are ignored.
+    This lower-level extractor is retained for source-specific metrics that
+    are not yet represented in the metric registry.
     """
 
     column_index, source_column_label = _find_period_column(
