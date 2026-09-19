@@ -1,10 +1,14 @@
 from decimal import Decimal
 
+import pytest
+
 from equitylens.calculations import calculate_percentage_change
 from equitylens.documents import EQUINOR_Q1_2026, EQUINOR_Q2_2026
 from equitylens.financial_extractor import extract_financial_fact
 from equitylens.models import ParsedTable
 from equitylens.table_parser import parse_tables
+
+pytestmark = pytest.mark.integration
 
 
 def _find_table_for_metric_and_period(

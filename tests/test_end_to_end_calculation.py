@@ -1,9 +1,13 @@
 from decimal import Decimal
 
+import pytest
+
 from equitylens.calculations import calculate_percentage_change
 from equitylens.documents import EQUINOR_Q2_2026
 from equitylens.financial_extractor import extract_financial_fact
 from equitylens.table_parser import parse_tables
+
+pytestmark = pytest.mark.integration
 
 
 def test_real_pdf_to_adjusted_operating_income_yoy_change():

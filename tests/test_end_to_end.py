@@ -1,8 +1,12 @@
 from decimal import Decimal
 
+import pytest
+
 from equitylens.documents import EQUINOR_Q2_2026
 from equitylens.financial_extractor import extract_exchange_rate_fact
 from equitylens.table_parser import parse_tables
+
+pytestmark = pytest.mark.integration
 
 
 def test_real_equinor_pdf_to_auditable_financial_fact():

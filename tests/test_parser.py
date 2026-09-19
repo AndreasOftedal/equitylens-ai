@@ -1,5 +1,9 @@
+import pytest
+
 from equitylens.documents import EQUINOR_Q2_2026
 from equitylens.parser import parse_pdf
+
+pytestmark = pytest.mark.integration
 
 
 def test_parse_equinor_report_returns_pages():

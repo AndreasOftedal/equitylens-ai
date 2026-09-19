@@ -1,5 +1,9 @@
+import pytest
+
 from equitylens.documents import EQUINOR_Q2_2026
 from equitylens.table_parser import parse_tables
+
+pytestmark = pytest.mark.integration
 
 
 def test_parse_exchange_rate_table():
