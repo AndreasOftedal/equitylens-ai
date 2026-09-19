@@ -6,6 +6,48 @@ from pathlib import Path
 
 from equitylens.models import ParsedTable
 
+MAX_WORKER_ATTEMPTS = 2
+
+
+def _run_worker(
+    command: list[str],
+    output_path: Path,
+) -> None:
+    errors = []
+
+    for attempt in range(1, MAX_WORKER_ATTEMPTS + 1):
+        if output_path.exists():
+            output_path.unlink()
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+
+        if result.returncode == 0 and output_path.exists():
+            return
+
+        error_output = result.stderr.strip() or result.stdout.strip()
+
+        if not error_output:
+            error_output = "Worker exited without diagnostic output."
+
+        errors.append(
+            f"Attempt {attempt}/{MAX_WORKER_ATTEMPTS} failed "
+            f"with exit code {result.returncode}:\n"
+            f"{error_output}"
+        )
+
+    raise RuntimeError(
+        "Docling table extraction failed after "
+        f"{MAX_WORKER_ATTEMPTS} attempts.\n\n"
+        + "\n\n".join(errors)
+    )
+
 
 def parse_tables(
     document_id: str,
@@ -37,27 +79,10 @@ def parse_tables(
             str(output_path),
         ]
 
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
+        _run_worker(
+            command=command,
+            output_path=output_path,
         )
-
-        if result.returncode != 0:
-            error_output = result.stderr.strip() or result.stdout.strip()
-
-            raise RuntimeError(
-                "Docling table extraction failed in worker process.\n"
-                f"{error_output}"
-            )
-
-        if not output_path.exists():
-            raise RuntimeError(
-                "Docling worker completed without producing table output."
-            )
 
         payload = json.loads(
             output_path.read_text(encoding="utf-8")
