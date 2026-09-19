@@ -1,11 +1,26 @@
 import pytest
 
 from equitylens.metrics import (
-    ADJUSTED_OPERATING_INCOME,
     CORE_FINANCIAL_METRICS,
     METRIC_REGISTRY,
     get_metric_definition,
 )
+
+EXPECTED_CORE_METRIC_IDS = {
+    "net_operating_income",
+    "net_income",
+    "basic_earnings_per_share",
+    "adjusted_operating_income",
+    "adjusted_net_income",
+    "adjusted_earnings_per_share",
+    "operating_cash_flow",
+    "operating_cash_flow_after_tax",
+    "net_cash_flow_before_capital_distribution",
+    "group_average_liquids_price",
+    "total_equity_production",
+    "total_power_generation",
+    "renewable_power_generation",
+}
 
 
 def test_core_metric_registry_has_unique_metric_ids():
@@ -18,34 +33,79 @@ def test_core_metric_registry_has_unique_metric_ids():
 
 
 def test_registry_contains_all_core_metrics():
-    assert set(METRIC_REGISTRY) == {
-        "net_operating_income",
-        "net_income",
-        "adjusted_operating_income",
-        "adjusted_net_income",
-    }
+    assert set(METRIC_REGISTRY) == EXPECTED_CORE_METRIC_IDS
+    assert len(METRIC_REGISTRY) == 13
 
 
 def test_adjusted_operating_income_supports_source_label_variants():
-    assert ADJUSTED_OPERATING_INCOME.canonical_name == (
-        "Adjusted operating income"
-    )
-
-    assert ADJUSTED_OPERATING_INCOME.source_labels == (
-        "Adjusted operating income*",
-        "Adjusted operating income/(loss)*",
-    )
-
-    assert ADJUSTED_OPERATING_INCOME.unit == "USD million"
-    assert ADJUSTED_OPERATING_INCOME.category == "profitability"
-
-
-def test_get_metric_definition_returns_registered_metric():
     metric = get_metric_definition(
         "adjusted_operating_income"
     )
 
-    assert metric is ADJUSTED_OPERATING_INCOME
+    assert "Adjusted operating income*" in metric.source_labels
+    assert (
+        "Adjusted operating income/(loss)*"
+        in metric.source_labels
+    )
+
+
+def test_get_metric_definition_returns_registered_metric():
+    metric = get_metric_definition(
+        "operating_cash_flow"
+    )
+
+    assert metric.metric_id == "operating_cash_flow"
+    assert (
+        metric.canonical_name
+        == "Cash flows provided by operating activities"
+    )
+    assert metric.unit == "USD million"
+    assert metric.category == "cash_flow"
+
+
+def test_registry_contains_multiple_financial_categories():
+    categories = {
+        metric.category
+        for metric in CORE_FINANCIAL_METRICS
+    }
+
+    assert categories == {
+        "profitability",
+        "cash_flow",
+        "operations",
+        "market",
+    }
+
+
+def test_eps_metrics_use_per_share_units():
+    basic_eps = get_metric_definition(
+        "basic_earnings_per_share"
+    )
+
+    adjusted_eps = get_metric_definition(
+        "adjusted_earnings_per_share"
+    )
+
+    assert basic_eps.unit == "USD per share"
+    assert adjusted_eps.unit == "USD per share"
+
+
+def test_operational_metrics_use_expected_units():
+    production = get_metric_definition(
+        "total_equity_production"
+    )
+
+    total_power = get_metric_definition(
+        "total_power_generation"
+    )
+
+    renewable_power = get_metric_definition(
+        "renewable_power_generation"
+    )
+
+    assert production.unit == "mboe/day"
+    assert total_power.unit == "TWh"
+    assert renewable_power.unit == "TWh"
 
 
 def test_get_metric_definition_rejects_unknown_metric():
