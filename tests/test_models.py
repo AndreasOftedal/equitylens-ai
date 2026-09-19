@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from equitylens.documents import EQUINOR_Q2_2026
+from equitylens.documents import EQUINOR_Q1_2026, EQUINOR_Q2_2026
 from equitylens.models import Document, EvidenceRef, FinancialFact
 
 
@@ -23,9 +23,16 @@ def test_document_stores_source_metadata():
     assert document.document_type == "quarterly_report"
 
 
+def test_equinor_q1_2026_source_exists():
+    assert EQUINOR_Q1_2026.local_path.exists()
+    assert EQUINOR_Q1_2026.local_path.suffix == ".pdf"
+    assert EQUINOR_Q1_2026.reporting_period == "Q1 2026"
+
+
 def test_equinor_q2_2026_source_exists():
     assert EQUINOR_Q2_2026.local_path.exists()
     assert EQUINOR_Q2_2026.local_path.suffix == ".pdf"
+    assert EQUINOR_Q2_2026.reporting_period == "Q2 2026"
 
 
 def test_financial_fact_preserves_evidence():
