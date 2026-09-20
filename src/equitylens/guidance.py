@@ -15,6 +15,12 @@ GuidanceChangeType = Literal[
     "changed",
 ]
 
+GuidanceValueType = Literal[
+    "scalar",
+    "range",
+    "qualitative",
+]
+
 
 @dataclass(frozen=True)
 class GuidanceItem:
@@ -26,6 +32,8 @@ class GuidanceItem:
     section: str
     statement: str
     numeric_value: Decimal | None = None
+    numeric_lower_bound: Decimal | None = None
+    numeric_upper_bound: Decimal | None = None
     unit: str | None = None
     qualifier: str | None = None
     qualitative_value: str | None = None
@@ -61,8 +69,27 @@ class GuidanceItem:
                 "statement cannot be empty."
             )
 
-        has_numeric_value = (
+        has_scalar_value = (
             self.numeric_value is not None
+        )
+
+        has_lower_bound = (
+            self.numeric_lower_bound is not None
+        )
+
+        has_upper_bound = (
+            self.numeric_upper_bound is not None
+        )
+
+        if has_lower_bound != has_upper_bound:
+            raise ValueError(
+                "Numeric range guidance requires "
+                "both lower and upper bounds."
+            )
+
+        has_range_value = (
+            has_lower_bound
+            and has_upper_bound
         )
 
         has_qualitative_value = bool(
@@ -70,17 +97,39 @@ class GuidanceItem:
             and self.qualitative_value.strip()
         )
 
-        if (
-            has_numeric_value
-            == has_qualitative_value
-        ):
+        value_type_count = sum(
+            (
+                has_scalar_value,
+                has_range_value,
+                has_qualitative_value,
+            )
+        )
+
+        if value_type_count != 1:
             raise ValueError(
-                "GuidanceItem must contain exactly "
-                "one numeric or qualitative value."
+                "GuidanceItem must contain exactly one "
+                "numeric or qualitative value type: "
+                "scalar numeric, numeric range, or "
+                "qualitative value."
             )
 
         if (
-            has_numeric_value
+            has_range_value
+            and self.numeric_lower_bound
+            > self.numeric_upper_bound
+        ):
+            raise ValueError(
+                "Numeric guidance lower bound "
+                "cannot exceed upper bound."
+            )
+
+        has_numeric_guidance = (
+            has_scalar_value
+            or has_range_value
+        )
+
+        if (
+            has_numeric_guidance
             and not self.unit
         ):
             raise ValueError(
@@ -119,6 +168,194 @@ def _normalize_optional_text(
     )
 
 
+def _guidance_value_type(
+    item: GuidanceItem,
+) -> GuidanceValueType:
+    if item.numeric_value is not None:
+        return "scalar"
+
+    if (
+        item.numeric_lower_bound is not None
+        and item.numeric_upper_bound is not None
+    ):
+        return "range"
+
+    return "qualitative"
+
+
+def _validate_numeric_units(
+    previous: GuidanceItem,
+    current: GuidanceItem,
+) -> None:
+    if (
+        _normalize_optional_text(
+            previous.unit
+        )
+        != _normalize_optional_text(
+            current.unit
+        )
+    ):
+        raise ValueError(
+            "Numeric guidance units must match."
+        )
+
+
+def _compare_scalar_guidance(
+    previous: GuidanceItem,
+    current: GuidanceItem,
+    qualifier_changed: bool,
+    category_changed: bool,
+) -> GuidanceChangeType:
+    _validate_numeric_units(
+        previous,
+        current,
+    )
+
+    assert (
+        previous.numeric_value is not None
+    )
+
+    assert (
+        current.numeric_value is not None
+    )
+
+    if (
+        current.numeric_value
+        > previous.numeric_value
+    ):
+        return "increased"
+
+    if (
+        current.numeric_value
+        < previous.numeric_value
+    ):
+        return "decreased"
+
+    if (
+        qualifier_changed
+        or category_changed
+    ):
+        return "changed"
+
+    return "unchanged"
+
+
+def _compare_range_guidance(
+    previous: GuidanceItem,
+    current: GuidanceItem,
+    qualifier_changed: bool,
+    category_changed: bool,
+) -> GuidanceChangeType:
+    _validate_numeric_units(
+        previous,
+        current,
+    )
+
+    assert (
+        previous.numeric_lower_bound
+        is not None
+    )
+
+    assert (
+        previous.numeric_upper_bound
+        is not None
+    )
+
+    assert (
+        current.numeric_lower_bound
+        is not None
+    )
+
+    assert (
+        current.numeric_upper_bound
+        is not None
+    )
+
+    previous_lower = (
+        previous.numeric_lower_bound
+    )
+
+    previous_upper = (
+        previous.numeric_upper_bound
+    )
+
+    current_lower = (
+        current.numeric_lower_bound
+    )
+
+    current_upper = (
+        current.numeric_upper_bound
+    )
+
+    bounds_unchanged = (
+        current_lower == previous_lower
+        and current_upper == previous_upper
+    )
+
+    if bounds_unchanged:
+        if (
+            qualifier_changed
+            or category_changed
+        ):
+            return "changed"
+
+        return "unchanged"
+
+    moved_up = (
+        current_lower >= previous_lower
+        and current_upper >= previous_upper
+        and (
+            current_lower > previous_lower
+            or current_upper > previous_upper
+        )
+    )
+
+    if moved_up:
+        return "increased"
+
+    moved_down = (
+        current_lower <= previous_lower
+        and current_upper <= previous_upper
+        and (
+            current_lower < previous_lower
+            or current_upper < previous_upper
+        )
+    )
+
+    if moved_down:
+        return "decreased"
+
+    return "changed"
+
+
+def _compare_qualitative_guidance(
+    previous: GuidanceItem,
+    current: GuidanceItem,
+    qualifier_changed: bool,
+    category_changed: bool,
+) -> GuidanceChangeType:
+    previous_value = (
+        _normalize_optional_text(
+            previous.qualitative_value
+        )
+    )
+
+    current_value = (
+        _normalize_optional_text(
+            current.qualitative_value
+        )
+    )
+
+    if (
+        previous_value == current_value
+        and not qualifier_changed
+        and not category_changed
+    ):
+        return "unchanged"
+
+    return "changed"
+
+
 def compare_guidance(
     previous: GuidanceItem,
     current: GuidanceItem,
@@ -150,81 +387,67 @@ def compare_guidance(
         != current.category
     )
 
-    previous_is_numeric = (
-        previous.numeric_value is not None
+    previous_value_type = (
+        _guidance_value_type(
+            previous
+        )
     )
 
-    current_is_numeric = (
-        current.numeric_value is not None
+    current_value_type = (
+        _guidance_value_type(
+            current
+        )
     )
 
     if (
-        previous_is_numeric
-        and current_is_numeric
+        previous_value_type
+        != current_value_type
     ):
-        if (
-            _normalize_optional_text(
-                previous.unit
-            )
-            != _normalize_optional_text(
-                current.unit
-            )
-        ):
-            raise ValueError(
-                "Numeric guidance units must match."
-            )
+        change_type: GuidanceChangeType = (
+            "changed"
+        )
 
-        if (
-            current.numeric_value
-            > previous.numeric_value
-        ):
-            change_type: GuidanceChangeType = (
-                "increased"
-            )
-
-        elif (
-            current.numeric_value
-            < previous.numeric_value
-        ):
-            change_type = "decreased"
-
-        elif (
-            qualifier_changed
-            or category_changed
-        ):
-            change_type = "changed"
-
-        else:
-            change_type = "unchanged"
-
-    elif (
-        not previous_is_numeric
-        and not current_is_numeric
-    ):
-        previous_value = (
-            _normalize_optional_text(
-                previous.qualitative_value
+    elif previous_value_type == "scalar":
+        change_type = (
+            _compare_scalar_guidance(
+                previous=previous,
+                current=current,
+                qualifier_changed=(
+                    qualifier_changed
+                ),
+                category_changed=(
+                    category_changed
+                ),
             )
         )
 
-        current_value = (
-            _normalize_optional_text(
-                current.qualitative_value
+    elif previous_value_type == "range":
+        change_type = (
+            _compare_range_guidance(
+                previous=previous,
+                current=current,
+                qualifier_changed=(
+                    qualifier_changed
+                ),
+                category_changed=(
+                    category_changed
+                ),
             )
         )
-
-        if (
-            previous_value == current_value
-            and not qualifier_changed
-            and not category_changed
-        ):
-            change_type = "unchanged"
-
-        else:
-            change_type = "changed"
 
     else:
-        change_type = "changed"
+        change_type = (
+            _compare_qualitative_guidance(
+                previous=previous,
+                current=current,
+                qualifier_changed=(
+                    qualifier_changed
+                ),
+                category_changed=(
+                    category_changed
+                ),
+            )
+        )
 
     return GuidanceChange(
         metric_id=previous.metric_id,
