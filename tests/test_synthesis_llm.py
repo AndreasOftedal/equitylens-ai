@@ -14,9 +14,17 @@ from equitylens.synthesis_prompt import SynthesisPrompt
 class FakeResponses:
     def __init__(
         self,
-        output_text,
+        outcomes,
     ):
-        self.output_text = output_text
+        if not isinstance(
+            outcomes,
+            tuple,
+        ):
+            outcomes = (
+                outcomes,
+            )
+
+        self.outcomes = outcomes
         self.calls = []
 
     def create(
@@ -27,15 +35,30 @@ class FakeResponses:
             kwargs
         )
 
+        index = min(
+            len(self.calls) - 1,
+            len(self.outcomes) - 1,
+        )
+
+        outcome = self.outcomes[
+            index
+        ]
+
+        if isinstance(
+            outcome,
+            BaseException,
+        ):
+            raise outcome
+
         return SimpleNamespace(
-            output_text=self.output_text
+            output_text=outcome
         )
 
 
 class FakeOpenAI:
     def __init__(
         self,
-        output_text=(
+        outcomes=(
             '{"schema_version":"1.0",'
             '"title":"Test",'
             '"claims":[],'
@@ -43,8 +66,79 @@ class FakeOpenAI:
         ),
     ):
         self.responses = FakeResponses(
-            output_text
+            outcomes
         )
+
+
+class FakeAPIConnectionError(
+    Exception,
+):
+    pass
+
+
+class FakeAPITimeoutError(
+    FakeAPIConnectionError,
+):
+    pass
+
+
+class FakeAPIStatusError(
+    Exception,
+):
+    def __init__(
+        self,
+        status_code,
+    ):
+        super().__init__(
+            f"HTTP {status_code}"
+        )
+
+        self.status_code = (
+            status_code
+        )
+
+
+class FakeRateLimitError(
+    FakeAPIStatusError,
+):
+    pass
+
+
+def _patch_provider_errors(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "equitylens.synthesis_llm."
+        "APIConnectionError",
+        FakeAPIConnectionError,
+    )
+
+    monkeypatch.setattr(
+        "equitylens.synthesis_llm."
+        "APITimeoutError",
+        FakeAPITimeoutError,
+    )
+
+    monkeypatch.setattr(
+        "equitylens.synthesis_llm."
+        "APIStatusError",
+        FakeAPIStatusError,
+    )
+
+    monkeypatch.setattr(
+        "equitylens.synthesis_llm."
+        "RateLimitError",
+        FakeRateLimitError,
+    )
+
+
+def _valid_response():
+    return (
+        '{"schema_version":"1.0",'
+        '"title":"Test",'
+        '"claims":[],'
+        '"limitations":[]}'
+    )
 
 
 def _prompt():
@@ -103,6 +197,38 @@ def test_default_model_is_luna():
     )
 
 
+def test_default_openai_client_disables_sdk_retries(
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_openai(
+        **kwargs,
+    ):
+        captured.update(
+            kwargs
+        )
+
+        return FakeOpenAI()
+
+    monkeypatch.setattr(
+        "equitylens.synthesis_llm.OpenAI",
+        fake_openai,
+    )
+
+    OpenAISynthesisClient()
+
+    assert (
+        captured["max_retries"]
+        == 0
+    )
+
+    assert (
+        captured["timeout"]
+        == 60.0
+    )
+
+
 def test_generate_calls_responses_api_with_guarded_prompt():
     fake_client = FakeOpenAI()
 
@@ -119,6 +245,11 @@ def test_generate_calls_responses_api_with_guarded_prompt():
 
     assert result.raw_text.startswith(
         "{"
+    )
+
+    assert (
+        result.provider_attempts
+        == 1
     )
 
     assert len(
@@ -272,6 +403,244 @@ def test_guidance_claim_requires_string_target_period():
     )
 
 
+def test_connection_error_retries_then_succeeds(
+    monkeypatch,
+):
+    _patch_provider_errors(
+        monkeypatch
+    )
+
+    sleeps = []
+
+    fake_client = FakeOpenAI(
+        outcomes=(
+            FakeAPIConnectionError(
+                "connection failed"
+            ),
+            _valid_response(),
+        )
+    )
+
+    client = OpenAISynthesisClient(
+        client=fake_client,
+        sleep_fn=sleeps.append,
+    )
+
+    result = client.generate(
+        _prompt()
+    )
+
+    assert (
+        result.provider_attempts
+        == 2
+    )
+
+    assert len(
+        fake_client.responses.calls
+    ) == 2
+
+    assert sleeps == [
+        0.5,
+    ]
+
+
+def test_timeout_retries_then_succeeds(
+    monkeypatch,
+):
+    _patch_provider_errors(
+        monkeypatch
+    )
+
+    fake_client = FakeOpenAI(
+        outcomes=(
+            FakeAPITimeoutError(
+                "request timed out"
+            ),
+            _valid_response(),
+        )
+    )
+
+    client = OpenAISynthesisClient(
+        client=fake_client,
+        sleep_fn=lambda _: None,
+    )
+
+    result = client.generate(
+        _prompt()
+    )
+
+    assert (
+        result.provider_attempts
+        == 2
+    )
+
+
+def test_rate_limit_retries_then_succeeds(
+    monkeypatch,
+):
+    _patch_provider_errors(
+        monkeypatch
+    )
+
+    fake_client = FakeOpenAI(
+        outcomes=(
+            FakeRateLimitError(
+                429
+            ),
+            _valid_response(),
+        )
+    )
+
+    client = OpenAISynthesisClient(
+        client=fake_client,
+        sleep_fn=lambda _: None,
+    )
+
+    result = client.generate(
+        _prompt()
+    )
+
+    assert (
+        result.provider_attempts
+        == 2
+    )
+
+
+def test_server_error_retries_then_succeeds(
+    monkeypatch,
+):
+    _patch_provider_errors(
+        monkeypatch
+    )
+
+    fake_client = FakeOpenAI(
+        outcomes=(
+            FakeAPIStatusError(
+                503
+            ),
+            _valid_response(),
+        )
+    )
+
+    client = OpenAISynthesisClient(
+        client=fake_client,
+        sleep_fn=lambda _: None,
+    )
+
+    result = client.generate(
+        _prompt()
+    )
+
+    assert (
+        result.provider_attempts
+        == 2
+    )
+
+
+def test_non_retryable_status_error_stops_immediately(
+    monkeypatch,
+):
+    _patch_provider_errors(
+        monkeypatch
+    )
+
+    fake_client = FakeOpenAI(
+        outcomes=FakeAPIStatusError(
+            401
+        )
+    )
+
+    client = OpenAISynthesisClient(
+        client=fake_client,
+        sleep_fn=lambda _: None,
+    )
+
+    with pytest.raises(
+        FakeAPIStatusError,
+    ):
+        client.generate(
+            _prompt()
+        )
+
+    assert len(
+        fake_client.responses.calls
+    ) == 1
+
+
+def test_retryable_error_is_raised_after_attempts_exhausted(
+    monkeypatch,
+):
+    _patch_provider_errors(
+        monkeypatch
+    )
+
+    fake_client = FakeOpenAI(
+        outcomes=FakeAPIStatusError(
+            500
+        )
+    )
+
+    client = OpenAISynthesisClient(
+        client=fake_client,
+        provider_max_attempts=3,
+        provider_retry_delay_seconds=0,
+        sleep_fn=lambda _: None,
+    )
+
+    with pytest.raises(
+        FakeAPIStatusError,
+    ):
+        client.generate(
+            _prompt()
+        )
+
+    assert len(
+        fake_client.responses.calls
+    ) == 3
+
+
+def test_provider_backoff_is_exponential(
+    monkeypatch,
+):
+    _patch_provider_errors(
+        monkeypatch
+    )
+
+    sleeps = []
+
+    fake_client = FakeOpenAI(
+        outcomes=(
+            FakeAPIStatusError(
+                500
+            ),
+            FakeAPIStatusError(
+                503
+            ),
+            _valid_response(),
+        )
+    )
+
+    client = OpenAISynthesisClient(
+        client=fake_client,
+        provider_max_attempts=3,
+        sleep_fn=sleeps.append,
+    )
+
+    result = client.generate(
+        _prompt()
+    )
+
+    assert (
+        result.provider_attempts
+        == 3
+    )
+
+    assert sleeps == [
+        0.5,
+        1.0,
+    ]
+
+
 def test_empty_model_is_rejected():
     with pytest.raises(
         ValueError,
@@ -280,6 +649,48 @@ def test_empty_model_is_rejected():
         OpenAISynthesisClient(
             model="   ",
             client=FakeOpenAI(),
+        )
+
+
+def test_provider_max_attempts_below_one_is_rejected():
+    with pytest.raises(
+        ValueError,
+        match=(
+            "provider_max_attempts "
+            "must be at least 1"
+        ),
+    ):
+        OpenAISynthesisClient(
+            client=FakeOpenAI(),
+            provider_max_attempts=0,
+        )
+
+
+def test_negative_provider_retry_delay_is_rejected():
+    with pytest.raises(
+        ValueError,
+        match=(
+            "provider_retry_delay_seconds "
+            "cannot be negative"
+        ),
+    ):
+        OpenAISynthesisClient(
+            client=FakeOpenAI(),
+            provider_retry_delay_seconds=-1,
+        )
+
+
+def test_non_positive_provider_timeout_is_rejected():
+    with pytest.raises(
+        ValueError,
+        match=(
+            "provider_timeout_seconds "
+            "must be greater than 0"
+        ),
+    ):
+        OpenAISynthesisClient(
+            client=FakeOpenAI(),
+            provider_timeout_seconds=0,
         )
 
 
@@ -324,7 +735,7 @@ def test_empty_user_message_is_rejected():
 def test_empty_model_output_is_rejected():
     client = OpenAISynthesisClient(
         client=FakeOpenAI(
-            output_text="   "
+            outcomes="   "
         )
     )
 
@@ -340,7 +751,7 @@ def test_empty_model_output_is_rejected():
 def test_non_string_model_output_is_rejected():
     client = OpenAISynthesisClient(
         client=FakeOpenAI(
-            output_text=None
+            outcomes=None
         )
     )
 

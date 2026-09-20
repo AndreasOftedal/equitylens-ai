@@ -1,12 +1,31 @@
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from openai import OpenAI
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    OpenAI,
+    RateLimitError,
+)
 
 from equitylens.synthesis_prompt import SynthesisPrompt
 
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_REASONING_EFFORT = "low"
+
+DEFAULT_PROVIDER_MAX_ATTEMPTS = 2
+DEFAULT_PROVIDER_TIMEOUT_SECONDS = 60.0
+DEFAULT_PROVIDER_RETRY_DELAY_SECONDS = 0.5
+MAX_PROVIDER_RETRY_DELAY_SECONDS = 4.0
+
+RETRYABLE_STATUS_CODES = {
+    408,
+    409,
+    429,
+}
 
 CLAIM_TYPES = (
     "financial_observation",
@@ -126,6 +145,49 @@ SYNTHESIS_JSON_SCHEMA = {
 class SynthesisLLMResponse:
     raw_text: str
     model: str
+    provider_attempts: int = 1
+
+
+def _is_retryable_provider_error(
+    error: Exception,
+) -> bool:
+    if isinstance(
+        error,
+        (
+            APITimeoutError,
+            APIConnectionError,
+            RateLimitError,
+        ),
+    ):
+        return True
+
+    if isinstance(
+        error,
+        APIStatusError,
+    ):
+        status_code = error.status_code
+
+        return (
+            status_code in RETRYABLE_STATUS_CODES
+            or status_code >= 500
+        )
+
+    return False
+
+
+def _provider_retry_delay(
+    failed_attempt: int,
+    base_delay_seconds: float,
+) -> float:
+    delay = (
+        base_delay_seconds
+        * (2 ** (failed_attempt - 1))
+    )
+
+    return min(
+        delay,
+        MAX_PROVIDER_RETRY_DELAY_SECONDS,
+    )
 
 
 class OpenAISynthesisClient:
@@ -133,18 +195,47 @@ class OpenAISynthesisClient:
         self,
         model: str = DEFAULT_MODEL,
         client: Any | None = None,
+        provider_max_attempts: int = DEFAULT_PROVIDER_MAX_ATTEMPTS,
+        provider_retry_delay_seconds: float = DEFAULT_PROVIDER_RETRY_DELAY_SECONDS,
+        provider_timeout_seconds: float = DEFAULT_PROVIDER_TIMEOUT_SECONDS,
+        sleep_fn: Callable[[float], None] = time.sleep,
     ) -> None:
         if not model.strip():
             raise ValueError(
                 "model cannot be empty."
             )
 
+        if provider_max_attempts < 1:
+            raise ValueError(
+                "provider_max_attempts must be at least 1."
+            )
+
+        if provider_retry_delay_seconds < 0:
+            raise ValueError(
+                "provider_retry_delay_seconds cannot be negative."
+            )
+
+        if provider_timeout_seconds <= 0:
+            raise ValueError(
+                "provider_timeout_seconds must be greater than 0."
+            )
+
         self._model = model.strip()
+        self._provider_max_attempts = (
+            provider_max_attempts
+        )
+        self._provider_retry_delay_seconds = (
+            provider_retry_delay_seconds
+        )
+        self._sleep_fn = sleep_fn
 
         self._client = (
             client
             if client is not None
-            else OpenAI()
+            else OpenAI(
+                max_retries=0,
+                timeout=provider_timeout_seconds,
+            )
         )
 
     @property
@@ -152,6 +243,35 @@ class OpenAISynthesisClient:
         self,
     ) -> str:
         return self._model
+
+    def _create_response(
+        self,
+        prompt: SynthesisPrompt,
+    ):
+        return self._client.responses.create(
+            model=self._model,
+            reasoning={
+                "effort": (
+                    DEFAULT_REASONING_EFFORT
+                ),
+            },
+            instructions=(
+                prompt.system_message
+            ),
+            input=prompt.user_message,
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": (
+                        "equitylens_synthesis"
+                    ),
+                    "strict": True,
+                    "schema": (
+                        SYNTHESIS_JSON_SCHEMA
+                    ),
+                },
+            },
+        )
 
     def generate(
         self,
@@ -167,32 +287,56 @@ class OpenAISynthesisClient:
                 "user_message cannot be empty."
             )
 
-        response = (
-            self._client.responses.create(
-                model=self._model,
-                reasoning={
-                    "effort": (
-                        DEFAULT_REASONING_EFFORT
+        response = None
+        provider_attempts = 0
+
+        for attempt in range(
+            1,
+            self._provider_max_attempts + 1,
+        ):
+            provider_attempts = attempt
+
+            try:
+                response = self._create_response(
+                    prompt
+                )
+            except (
+                APIConnectionError,
+                APIStatusError,
+            ) as error:
+                retryable = (
+                    _is_retryable_provider_error(
+                        error
+                    )
+                )
+
+                if (
+                    not retryable
+                    or attempt
+                    >= self._provider_max_attempts
+                ):
+                    raise
+
+                delay = _provider_retry_delay(
+                    failed_attempt=attempt,
+                    base_delay_seconds=(
+                        self._provider_retry_delay_seconds
                     ),
-                },
-                instructions=(
-                    prompt.system_message
-                ),
-                input=prompt.user_message,
-                text={
-                    "format": {
-                        "type": "json_schema",
-                        "name": (
-                            "equitylens_synthesis"
-                        ),
-                        "strict": True,
-                        "schema": (
-                            SYNTHESIS_JSON_SCHEMA
-                        ),
-                    },
-                },
+                )
+
+                self._sleep_fn(
+                    delay
+                )
+
+                continue
+
+            break
+
+        if response is None:
+            raise RuntimeError(
+                "Provider retry loop completed "
+                "without a response or exception."
             )
-        )
 
         raw_text = response.output_text
 
@@ -216,4 +360,5 @@ class OpenAISynthesisClient:
         return SynthesisLLMResponse(
             raw_text=raw_text,
             model=self._model,
+            provider_attempts=provider_attempts,
         )
