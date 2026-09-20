@@ -43,7 +43,16 @@ data/raw/equinor/*
 # Generated EquityLens data
 data/processed/
 data/indexes/
-data/cache/
+
+# Cache
+# Ignore all cache files except the four verified table caches
+data/cache/*
+!data/cache/tables/
+data/cache/tables/*
+!data/cache/tables/9ec8bf9c0a7dae41ea8805a17a163dd03317cf304c1c592e0ca35741aa2f3378.json
+!data/cache/tables/f86432a56108d2741bf3e17caaba17a27ff7ed8493dde43bbb3aa6238037777d.json
+!data/cache/tables/ec96857c40e2a3fb9504eec8dfcdec92397e55592ba33bc4cda4c971d7f66aff.json
+!data/cache/tables/879d74a78e1d7f37caed6335b3c44943850664a225fe7f4f7f16ed6f70b192b7.json
 
 # Logs
 logs/
