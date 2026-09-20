@@ -89,6 +89,7 @@ GUIDANCE_LABELS = {
     "renewable_power_generation_growth": "Renewable power generation growth",
     "organic_capex": "Organic capex",
     "share_buyback": "Share buyback",
+    "maintenance_production_impact": "Maintenance impact",
 }
 
 
@@ -371,6 +372,30 @@ st.markdown(
         border: 1px solid rgba(143, 166, 181, 0.16);
     }
 
+    .evidence-control-note {
+        background: rgba(103, 174, 245, 0.045);
+        border: 1px solid rgba(103, 174, 245, 0.14);
+        border-radius: 12px;
+        color: #a9bfcc;
+        font-size: 0.86rem;
+        line-height: 1.55;
+        margin-bottom: 0.9rem;
+        padding: 0.85rem 1rem;
+    }
+
+    .evidence-row-title {
+        color: #edf4f8;
+        font-weight: 650;
+        padding-top: 0.15rem;
+    }
+
+    .evidence-row-copy {
+        color: #9fb4c1;
+        font-size: 0.84rem;
+        line-height: 1.5;
+        padding-top: 0.08rem;
+    }
+
     hr {
         border-color: var(--border) !important;
     }
@@ -416,12 +441,43 @@ def _format_metric_value(
         return f"${_format_decimal(value, decimals=2)}"
 
     if kind == "production":
+        return (
+            f"{_format_decimal(value, decimals=1)} "
+            "mboe/day"
+        )
+
+    return _format_decimal(value)
+
+
+def _format_metric_card_value(
+    metric_id: str,
+    value: Decimal,
+    metric_kinds: dict[str, str],
+) -> str:
+    if metric_kinds[metric_id] == "production":
         return _format_decimal(
             value,
             decimals=1,
         )
 
-    return _format_decimal(value)
+    return _format_metric_value(
+        metric_id,
+        value,
+        metric_kinds,
+    )
+
+
+def _metric_card_label(
+    metric_id: str,
+    metric_labels: dict[str, str],
+    metric_kinds: dict[str, str],
+) -> str:
+    label = metric_labels[metric_id]
+
+    if metric_kinds[metric_id] == "production":
+        return f"{label} · mboe/day"
+
+    return label
 
 
 def _format_absolute_change(
@@ -437,6 +493,12 @@ def _format_absolute_change(
 
     if kind == "usd_per_share":
         return f"{sign}${_format_decimal(value, decimals=2)}"
+
+    if kind == "production":
+        return (
+            f"{sign}{_format_decimal(value, decimals=1)} "
+            "mboe/day"
+        )
 
     return f"{sign}{_format_decimal(value)}"
 
@@ -505,7 +567,18 @@ def _metric_label(
 def _format_guidance_number(
     value: Decimal,
 ) -> str:
-    return _format_decimal(value)
+    text = format(value, "f")
+
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+
+    integer, separator, fraction = text.partition(".")
+    integer_with_separators = f"{int(integer):,}"
+
+    if not separator:
+        return integer_with_separators
+
+    return f"{integer_with_separators}.{fraction}"
 
 
 def _format_guidance_item(
@@ -1205,6 +1278,153 @@ def _render_ai_synthesis_section(
         )
 
 
+def _evidence_display_state(result):
+    assessment = result.evidence_assessment
+
+    if assessment is None:
+        return (
+            "Narrative not configured",
+            "evidence-muted",
+            (
+                "This metric is included in the financial analysis, but "
+                "narrative driver retrieval is not configured for it."
+            ),
+            (),
+        )
+
+    if assessment.availability == "direct_explanation":
+        return (
+            "Validated explanation",
+            "evidence-direct",
+            (
+                "Direct management evidence passed period, comparison and "
+                "scope validation and is eligible to support a claim."
+            ),
+            assessment.direct_explanations,
+        )
+
+    if assessment.availability == "aligned_context_only":
+        return (
+            "Context only",
+            "evidence-context",
+            (
+                "Related management commentary was found, but it is not "
+                "eligible to support a direct explanation of the measured move."
+            ),
+            assessment.aligned_context,
+        )
+
+    return (
+        "No eligible explanation",
+        "evidence-muted",
+        (
+            "Narrative evidence was evaluated, but no text met the period, "
+            "comparison and scope requirements for a direct explanation."
+        ),
+        (),
+    )
+
+
+def _render_narrative_evidence_controls(
+    metric_ids: tuple[str, ...],
+    metric_results: dict,
+    metric_labels: dict[str, str],
+) -> None:
+    st.markdown(
+        '<div class="section-label">Evidence controls</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="section-title">Narrative evidence controls</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="evidence-control-note">
+            This panel shows whether management commentary is <strong>eligible</strong>
+            to explain the measured quarter-on-quarter move. A metric can be fully
+            analyzed financially even when no narrative explanation is admitted.
+            EquityLens prefers an explicit restriction over an unsupported causal claim.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.container(border=True):
+        for index, metric_id in enumerate(metric_ids):
+            result = metric_results[metric_id]
+            status, badge_class, explanation, evidence_items = (
+                _evidence_display_state(result)
+            )
+
+            metric_col, status_col, explanation_col = st.columns(
+                [1.15, 1.05, 2.8],
+                gap="medium",
+            )
+
+            with metric_col:
+                st.markdown(
+                    f'<div class="evidence-row-title">'
+                    f'{metric_labels[metric_id]}'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+
+            with status_col:
+                st.markdown(
+                    f'<div class="evidence-badge {badge_class}">'
+                    f'{status}'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+
+            with explanation_col:
+                st.markdown(
+                    f'<div class="evidence-row-copy">'
+                    f'{explanation}'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+
+            if evidence_items:
+                with st.expander(
+                    f"Evidence detail · {metric_labels[metric_id]}"
+                ):
+                    for evidence_item in evidence_items[:3]:
+                        sentence = getattr(
+                            evidence_item,
+                            "sentence",
+                            None,
+                        )
+
+                        if sentence is None:
+                            continue
+
+                        st.write(sentence.text)
+                        st.caption(
+                            "Source · "
+                            f"{sentence.document_id} · "
+                            f"p. {sentence.page_number}"
+                        )
+
+                    if len(evidence_items) > 3:
+                        st.caption(
+                            f"+ {len(evidence_items) - 3} additional "
+                            "validated evidence item(s)."
+                        )
+
+            if index < len(metric_ids) - 1:
+                st.divider()
+
+    st.caption(
+        "Status describes evidence eligibility for this exact period "
+        "comparison — not whether management discussed the topic elsewhere "
+        "in the report."
+    )
+
+
 with st.sidebar:
     st.markdown(
         "### ◈ EquityLens AI"
@@ -1418,15 +1638,6 @@ with summary_right:
 
 st.write("")
 
-_render_ai_synthesis_section(
-    research_result=research_result,
-    report=report,
-    metric_labels=metric_labels,
-)
-
-
-st.write("")
-
 st.markdown(
     '<div class="section-label">'
     "Financial performance"
@@ -1466,12 +1677,14 @@ for column, metric_id in zip(
     with column:
         st.metric(
             label=(
-                metric_labels[
-                    metric_id
-                ]
+                _metric_card_label(
+                    metric_id,
+                    metric_labels,
+                    metric_kinds,
+                )
             ),
             value=(
-                _format_metric_value(
+                _format_metric_card_value(
                     metric_id,
                     change.to_value,
                     metric_kinds,
@@ -1668,145 +1881,19 @@ else:
 
 st.write("")
 
-st.markdown(
-    '<div class="section-label">'
-    "Evidence controls"
-    "</div>",
-    unsafe_allow_html=True,
+_render_ai_synthesis_section(
+    research_result=research_result,
+    report=report,
+    metric_labels=metric_labels,
 )
 
-st.markdown(
-    '<div class="section-title">'
-    "Management evidence"
-    "</div>",
-    unsafe_allow_html=True,
+st.write("")
+
+_render_narrative_evidence_controls(
+    metric_ids=metric_ids,
+    metric_results=metric_results,
+    metric_labels=metric_labels,
 )
-
-st.caption(
-    "Evidence status reflects whether management narrative is eligible "
-    "to support a claim about the measured period change. Related text "
-    "is kept separate when it does not meet that standard."
-)
-
-evidence_columns = st.columns(
-    2,
-    gap="medium",
-)
-
-for index, metric_id in enumerate(
-    metric_ids
-):
-    if index > 0 and index % 2 == 0:
-        evidence_columns = st.columns(
-            2,
-            gap="medium",
-        )
-
-    column = evidence_columns[
-        index % 2
-    ]
-
-    result = metric_results[
-        metric_id
-    ]
-
-    assessment = (
-        result.evidence_assessment
-    )
-
-    evidence_items = ()
-
-    if assessment is None:
-        availability = "Not evaluated"
-        badge_class = "evidence-muted"
-        explanation = (
-            "No validated narrative evidence query is "
-            "registered for this metric."
-        )
-
-    elif (
-        assessment.availability
-        == "direct_explanation"
-    ):
-        availability = "Direct explanation"
-        badge_class = "evidence-direct"
-        explanation = (
-            "Direct management evidence passed the "
-            "comparison and scope controls."
-        )
-        evidence_items = (
-            assessment.direct_explanations
-        )
-
-    elif (
-        assessment.availability
-        == "aligned_context_only"
-    ):
-        availability = "Context only"
-        badge_class = "evidence-context"
-        explanation = (
-            "Related management context exists, but it "
-            "cannot support a direct causal claim."
-        )
-        evidence_items = (
-            assessment.aligned_context
-        )
-
-    else:
-        availability = "Unavailable"
-        badge_class = "evidence-muted"
-        explanation = (
-            "No validated direct explanation supports "
-            "this period comparison."
-        )
-
-    with column, st.container(
-        border=True
-    ):
-        st.markdown(
-            f"**{metric_labels[metric_id]}**"
-        )
-
-        st.markdown(
-            f'<div class="evidence-badge {badge_class}">'
-            f"{availability}"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-
-        st.caption(
-            explanation
-        )
-
-        if evidence_items:
-            for evidence_item in (
-                evidence_items[:2]
-            ):
-                sentence = getattr(
-                    evidence_item,
-                    "sentence",
-                    None,
-                )
-
-                if sentence is None:
-                    continue
-
-                st.write(
-                    sentence.text
-                )
-
-                st.caption(
-                    "Source · "
-                    f"{sentence.document_id} · "
-                    f"p. {sentence.page_number}"
-                )
-
-            if len(evidence_items) > 2:
-                st.caption(
-                    f"+ {len(evidence_items) - 2} additional "
-                    "validated evidence item(s) in the "
-                    "research object."
-                )
 
 
 st.write("")
