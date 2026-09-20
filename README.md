@@ -47,10 +47,14 @@ The dashboard provides:
 - executive research snapshot
 - quarter-on-quarter financial analysis
 - forward guidance tracker
-- management evidence controls
+- narrative evidence controls
 - validated AI synthesis
 - exact source provenance
 - direct links back to company reports
+
+### Dashboard overview
+
+![EquityLens research dashboard](docs/screenshots/dashboard-overview.png)
 
 The research engine is shared across companies rather than being implemented as separate hard-coded dashboards.
 
@@ -128,6 +132,8 @@ The model then received a controlled retry.
 The second output passed the unchanged validation rules and was accepted.
 
 This behavior is intentional: a plausible model response is not enough. It must remain inside the structured research evidence boundary.
+
+![Validated guarded AI synthesis](docs/screenshots/guarded-ai-synthesis.png)
 
 ---
 
@@ -285,6 +291,8 @@ The objective is:
 
 rather than simply displaying a generated answer.
 
+![Source provenance and audit trail](docs/screenshots/source-provenance.png)
+
 ---
 
 ## Multi-company design
@@ -373,6 +381,9 @@ equitylens-ai/
 │
 ├── data/
 │   └── raw/                 # Research source documents
+│
+├── docs/
+│   └── screenshots/         # Portfolio dashboard screenshots
 │
 ├── scripts/                 # Integration and live validation scripts
 │
@@ -578,7 +589,7 @@ Research dashboard: **complete**
 
 Automated tests and CI: **complete**
 
-Portfolio documentation and demo material: **in progress**
+Portfolio documentation and demo material: **complete**
 
 ---
 
