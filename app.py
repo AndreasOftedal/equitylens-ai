@@ -1,6 +1,8 @@
+import os
 from decimal import Decimal
 
 import streamlit as st
+from dotenv import load_dotenv
 
 from equitylens.analysis_pipeline import PeriodSource
 from equitylens.documents import (
@@ -13,6 +15,12 @@ from equitylens.research_pipeline import (
     build_aker_bp_research_result,
     build_equinor_research_result,
 )
+from equitylens.synthesis_input import build_synthesis_input
+from equitylens.synthesis_llm import OpenAISynthesisClient
+from equitylens.synthesis_pipeline import run_synthesis
+
+load_dotenv()
+
 
 COMPANY_CONFIGS = {
     "Aker BP ASA · AKRBP": {
@@ -82,6 +90,30 @@ GUIDANCE_LABELS = {
     "organic_capex": "Organic capex",
     "share_buyback": "Share buyback",
 }
+
+
+CLAIM_GROUPS = (
+    (
+        "financial_observation",
+        "Financial observations",
+        "Deterministic facts translated into analyst language.",
+    ),
+    (
+        "guidance_update",
+        "Guidance updates",
+        "Forward-looking guidance kept separate from historical performance.",
+    ),
+    (
+        "management_explanation",
+        "Management explanations",
+        "Only shown when direct narrative evidence passes validation.",
+    ),
+    (
+        "consistency_observation",
+        "Narrative consistency",
+        "Only shown when the evidence boundary supports a conclusion.",
+    ),
+)
 
 
 st.set_page_config(
@@ -224,6 +256,31 @@ st.markdown(
         margin: 0.4rem 0;
     }
 
+    .ai-intro {
+        background: linear-gradient(
+            135deg,
+            rgba(80, 214, 176, 0.07),
+            rgba(103, 174, 245, 0.04)
+        );
+        border: 1px solid rgba(80, 214, 176, 0.22);
+        border-radius: 14px;
+        padding: 1rem 1.15rem;
+        margin-bottom: 1rem;
+    }
+
+    .ai-intro-title {
+        color: #dff8f0;
+        font-weight: 650;
+        font-size: 1rem;
+        margin-bottom: 0.3rem;
+    }
+
+    .ai-intro-text {
+        color: #9eb4c1;
+        font-size: 0.88rem;
+        line-height: 1.5;
+    }
+
     [data-testid="stMetric"] {
         background: var(--panel);
         border: 1px solid var(--border);
@@ -304,19 +361,13 @@ def _format_metric_value(
     value: Decimal,
     metric_kinds: dict[str, str],
 ) -> str:
-    kind = metric_kinds[
-        metric_id
-    ]
+    kind = metric_kinds[metric_id]
 
     if kind == "usd_million":
-        return (
-            f"${_format_decimal(value, decimals=0)}m"
-        )
+        return f"${_format_decimal(value, decimals=0)}m"
 
     if kind == "usd_per_share":
-        return (
-            f"${_format_decimal(value, decimals=2)}"
-        )
+        return f"${_format_decimal(value, decimals=2)}"
 
     if kind == "production":
         return _format_decimal(
@@ -324,9 +375,7 @@ def _format_metric_value(
             decimals=1,
         )
 
-    return _format_decimal(
-        value
-    )
+    return _format_decimal(value)
 
 
 def _format_absolute_change(
@@ -334,38 +383,23 @@ def _format_absolute_change(
     value: Decimal,
     metric_kinds: dict[str, str],
 ) -> str:
-    kind = metric_kinds[
-        metric_id
-    ]
-
-    if kind == "usd_million":
-        sign = "+" if value > 0 else ""
-
-        return (
-            f"{sign}${_format_decimal(value, decimals=0)}m"
-        )
-
-    if kind == "usd_per_share":
-        sign = "+" if value > 0 else ""
-
-        return (
-            f"{sign}${_format_decimal(value, decimals=2)}"
-        )
-
+    kind = metric_kinds[metric_id]
     sign = "+" if value > 0 else ""
 
-    return (
-        f"{sign}{_format_decimal(value)}"
-    )
+    if kind == "usd_million":
+        return f"{sign}${_format_decimal(value, decimals=0)}m"
+
+    if kind == "usd_per_share":
+        return f"{sign}${_format_decimal(value, decimals=2)}"
+
+    return f"{sign}{_format_decimal(value)}"
 
 
 def _guidance_label(
     metric_id: str,
 ) -> str:
     if metric_id in GUIDANCE_LABELS:
-        return GUIDANCE_LABELS[
-            metric_id
-        ]
+        return GUIDANCE_LABELS[metric_id]
 
     return (
         metric_id
@@ -375,12 +409,20 @@ def _guidance_label(
     )
 
 
+def _metric_label(
+    metric_id: str,
+    metric_labels: dict[str, str],
+) -> str:
+    return metric_labels.get(
+        metric_id,
+        _guidance_label(metric_id),
+    )
+
+
 def _format_guidance_number(
     value: Decimal,
 ) -> str:
-    return _format_decimal(
-        value
-    )
+    return _format_decimal(value)
 
 
 def _format_guidance_item(
@@ -398,20 +440,15 @@ def _format_guidance_item(
         None,
     )
 
-    if (
-        lower is not None
-        and upper is not None
-    ):
+    if lower is not None and upper is not None:
         value = (
             f"{_format_guidance_number(lower)}–"
             f"{_format_guidance_number(upper)}"
         )
 
     elif item.numeric_value is not None:
-        value = (
-            _format_guidance_number(
-                item.numeric_value
-            )
+        value = _format_guidance_number(
+            item.numeric_value
         )
 
         if item.qualifier == "approximately":
@@ -424,9 +461,7 @@ def _format_guidance_item(
         return "—"
 
     if item.unit:
-        return (
-            f"{value} {item.unit}"
-        )
+        return f"{value} {item.unit}"
 
     return value
 
@@ -452,22 +487,10 @@ def _build_financial_summary(
     paragraphs = []
 
     for metric_id in metric_ids:
-        change = (
-            metric_results[
-                metric_id
-            ].change
-        )
-
-        label = (
-            metric_labels[
-                metric_id
-            ]
-        )
-
-        direction = (
-            _direction_text(
-                change.absolute_change
-            )
+        change = metric_results[metric_id].change
+        label = metric_labels[metric_id]
+        direction = _direction_text(
+            change.absolute_change
         )
 
         paragraphs.append(
@@ -475,27 +498,20 @@ def _build_financial_summary(
             f"<strong>{label}:</strong> "
             f"{direction} from "
             f"{_format_metric_value(metric_id, change.from_value, metric_kinds)} "
-            f"to "
+            "to "
             f"{_format_metric_value(metric_id, change.to_value, metric_kinds)} "
             f"({_format_percentage(change.percentage_change)})."
             "</p>"
         )
 
-    return "".join(
-        paragraphs
-    )
+    return "".join(paragraphs)
 
 
 def _build_guidance_summary(
     guidance_report,
 ) -> str:
-    changed = (
-        guidance_report.changed
-    )
-
-    unchanged = (
-        guidance_report.unchanged
-    )
+    changed = guidance_report.changed
+    unchanged = guidance_report.unchanged
 
     if changed:
         changed_names = ", ".join(
@@ -518,8 +534,8 @@ def _build_guidance_summary(
 
     unchanged_text = (
         f"<p><strong>{len(unchanged)} "
-        f"{'item was' if len(unchanged) == 1 else 'items were'} unchanged.</strong> "
-        "Forward-looking guidance is kept separate "
+        f"{'item was' if len(unchanged) == 1 else 'items were'} unchanged."
+        "</strong> Forward-looking guidance is kept separate "
         "from historical financial performance.</p>"
     )
 
@@ -553,45 +569,557 @@ def _build_guidance_summary(
 def _load_research_result(
     company_key: str,
 ):
-    config = (
-        COMPANY_CONFIGS[
-            company_key
-        ]
-    )
-
-    builder = (
-        config[
-            "builder"
-        ]
-    )
+    config = COMPANY_CONFIGS[company_key]
+    builder = config["builder"]
 
     return builder(
         previous_source=PeriodSource(
-            document=config[
-                "previous_document"
-            ],
-            page_number=config[
-                "financial_page"
-            ],
+            document=config["previous_document"],
+            page_number=config["financial_page"],
         ),
         current_source=PeriodSource(
-            document=config[
-                "current_document"
-            ],
-            page_number=config[
-                "financial_page"
-            ],
+            document=config["current_document"],
+            page_number=config["financial_page"],
         ),
-        company=config[
-            "company"
-        ],
-        ticker=config[
-            "ticker"
-        ],
-        metric_ids=config[
-            "metric_ids"
-        ],
+        company=config["company"],
+        ticker=config["ticker"],
+        metric_ids=config["metric_ids"],
     )
+
+
+def _configure_openai_api_key() -> bool:
+    if os.getenv("OPENAI_API_KEY"):
+        return True
+
+    try:
+        secret_key = st.secrets.get(
+            "OPENAI_API_KEY"
+        )
+    except Exception:  # noqa: BLE001
+        secret_key = None
+
+    if not secret_key:
+        return False
+
+    os.environ["OPENAI_API_KEY"] = str(
+        secret_key
+    )
+
+    return True
+
+
+def _synthesis_session_key(
+    report,
+) -> str:
+    return (
+        "validated_synthesis::"
+        f"{report.ticker}::"
+        f"{report.from_period}::"
+        f"{report.to_period}"
+    )
+
+
+def _synthesis_error_key(
+    report,
+) -> str:
+    return (
+        "synthesis_error::"
+        f"{report.ticker}::"
+        f"{report.from_period}::"
+        f"{report.to_period}"
+    )
+
+
+def _claim_provenance(
+    claim,
+    synthesis_input,
+) -> str:
+    source_facts = {
+        fact.fact_id: fact
+        for metric in synthesis_input.metrics
+        for fact in metric.source_facts
+    }
+
+    evidence_sentences = {
+        evidence.sentence_id: evidence
+        for metric in synthesis_input.metrics
+        for evidence in (
+            *metric.direct_explanations,
+            *metric.aligned_context,
+        )
+    }
+
+    references: list[str] = []
+
+    for fact_id in claim.source_fact_ids:
+        fact = source_facts.get(
+            fact_id
+        )
+
+        if fact is None:
+            continue
+
+        references.append(
+            f"{fact.period} · "
+            f"{fact.source.document_id} · "
+            f"p. {fact.source.page_number}"
+        )
+
+    for sentence_id in claim.evidence_sentence_ids:
+        evidence = evidence_sentences.get(
+            sentence_id
+        )
+
+        if evidence is None:
+            continue
+
+        references.append(
+            f"{evidence.document_id} · "
+            f"p. {evidence.page_number}"
+        )
+
+    if claim.claim_type == "guidance_update":
+        guidance_sources = {}
+
+        for change in synthesis_input.guidance_changes:
+            guidance_sources[
+                (
+                    change.metric_id,
+                    change.target_period,
+                )
+            ] = (
+                change.current.document_id,
+                change.current.page_number,
+            )
+
+        for item in synthesis_input.guidance_introduced:
+            guidance_sources[
+                (
+                    item.metric_id,
+                    item.target_period,
+                )
+            ] = (
+                item.document_id,
+                item.page_number,
+            )
+
+        for item in synthesis_input.guidance_withdrawn:
+            guidance_sources[
+                (
+                    item.metric_id,
+                    item.target_period,
+                )
+            ] = (
+                item.document_id,
+                item.page_number,
+            )
+
+        source = guidance_sources.get(
+            (
+                claim.metric_id,
+                claim.target_period,
+            )
+        )
+
+        if source is not None:
+            references.append(
+                f"{source[0]} · p. {source[1]}"
+            )
+
+    unique_references = list(
+        dict.fromkeys(
+            references
+        )
+    )
+
+    return " · ".join(
+        unique_references
+    )
+
+
+def _render_claim_group(
+    title: str,
+    description: str,
+    claims: list,
+    metric_labels: dict[str, str],
+    synthesis_input,
+) -> None:
+    st.markdown(
+        f"#### {title}"
+    )
+
+    st.caption(
+        description
+    )
+
+    if not claims:
+        st.caption(
+            "No validated claims in this category."
+        )
+        return
+
+    for claim in claims:
+        with st.container(
+            border=True
+        ):
+            label = _metric_label(
+                claim.metric_id,
+                metric_labels,
+            )
+
+            st.markdown(
+                f"**{label}**"
+            )
+
+            st.write(
+                claim.text
+            )
+
+            provenance = (
+                _claim_provenance(
+                    claim,
+                    synthesis_input,
+                )
+            )
+
+            if provenance:
+                st.caption(
+                    f"Source · {provenance}"
+                )
+
+
+def _render_synthesis(
+    validated,
+    synthesis_input,
+    metric_labels: dict[str, str],
+) -> None:
+    draft = validated.draft
+
+    st.success(
+        "Validated by EquityLens guardrails. "
+        "Only accepted claims are shown."
+    )
+
+    meta_columns = st.columns(
+        3,
+        gap="small",
+    )
+
+    with meta_columns[0]:
+        st.metric(
+            "Model",
+            validated.model,
+        )
+
+    with meta_columns[1]:
+        st.metric(
+            "Synthesis attempts",
+            validated.attempts,
+        )
+
+    with meta_columns[2]:
+        st.metric(
+            "Guardrail rejections",
+            len(validated.failures),
+        )
+
+    st.markdown(
+        f"### {draft.title}"
+    )
+
+    claims_by_type = {
+        claim_type: [
+            claim
+            for claim in draft.claims
+            if claim.claim_type
+            == claim_type
+        ]
+        for claim_type, _, _
+        in CLAIM_GROUPS
+    }
+
+    first_row = st.columns(
+        2,
+        gap="medium",
+    )
+
+    with first_row[0]:
+        claim_type, title, description = (
+            CLAIM_GROUPS[0]
+        )
+
+        _render_claim_group(
+            title=title,
+            description=description,
+            claims=claims_by_type[
+                claim_type
+            ],
+            metric_labels=metric_labels,
+            synthesis_input=synthesis_input,
+        )
+
+    with first_row[1]:
+        claim_type, title, description = (
+            CLAIM_GROUPS[1]
+        )
+
+        _render_claim_group(
+            title=title,
+            description=description,
+            claims=claims_by_type[
+                claim_type
+            ],
+            metric_labels=metric_labels,
+            synthesis_input=synthesis_input,
+        )
+
+    second_row_claims = (
+        claims_by_type[
+            "management_explanation"
+        ]
+        or claims_by_type[
+            "consistency_observation"
+        ]
+    )
+
+    if second_row_claims:
+        second_row = st.columns(
+            2,
+            gap="medium",
+        )
+
+        with second_row[0]:
+            claim_type, title, description = (
+                CLAIM_GROUPS[2]
+            )
+
+            _render_claim_group(
+                title=title,
+                description=description,
+                claims=claims_by_type[
+                    claim_type
+                ],
+                metric_labels=metric_labels,
+                synthesis_input=synthesis_input,
+            )
+
+        with second_row[1]:
+            claim_type, title, description = (
+                CLAIM_GROUPS[3]
+            )
+
+            _render_claim_group(
+                title=title,
+                description=description,
+                claims=claims_by_type[
+                    claim_type
+                ],
+                metric_labels=metric_labels,
+                synthesis_input=synthesis_input,
+            )
+
+    if draft.limitations:
+        with st.container(
+            border=True
+        ):
+            st.markdown(
+                "**Research limitations**"
+            )
+
+            for limitation in draft.limitations:
+                st.markdown(
+                    f"- {limitation}"
+                )
+
+    if validated.failures:
+        with st.expander(
+            "Guardrail retry details"
+        ):
+            st.caption(
+                "Rejected attempts are never "
+                "accepted as research output."
+            )
+
+            for failure in validated.failures:
+                st.markdown(
+                    f"**Attempt {failure.attempt} · "
+                    f"{failure.error_type}**"
+                )
+
+                st.code(
+                    failure.error_message
+                )
+
+
+def _render_ai_synthesis_section(
+    research_result,
+    report,
+    metric_labels: dict[str, str],
+) -> None:
+    st.markdown(
+        '<div class="section-label">'
+        "Guarded AI layer"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="section-title">'
+        "Validated AI synthesis"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="ai-intro">
+            <div class="ai-intro-title">
+                AI writes. EquityLens decides what is allowed through.
+            </div>
+            <div class="ai-intro-text">
+                The model receives only structured research data.
+                Financial calculations remain deterministic, unsupported
+                management explanations are rejected, and raw model output
+                is never shown as accepted research.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    synthesis_input = (
+        build_synthesis_input(
+            research_result
+        )
+    )
+
+    synthesis_key = (
+        _synthesis_session_key(
+            report
+        )
+    )
+
+    error_key = (
+        _synthesis_error_key(
+            report
+        )
+    )
+
+    existing = st.session_state.get(
+        synthesis_key
+    )
+
+    has_api_key = (
+        _configure_openai_api_key()
+    )
+
+    control_left, control_right = (
+        st.columns(
+            [1, 2.4],
+            gap="medium",
+        )
+    )
+
+    with control_left:
+        button_label = (
+            "Regenerate validated synthesis"
+            if existing is not None
+            else "Generate validated AI synthesis"
+        )
+
+        generate_clicked = (
+            st.button(
+                button_label,
+                type="primary",
+                disabled=not has_api_key,
+            )
+        )
+
+    with control_right:
+        st.caption(
+            "Runs only when you click the button. "
+            "This uses the OpenAI API and may incur API usage. "
+            "The accepted result is kept in this browser session."
+        )
+
+    if not has_api_key:
+        st.info(
+            "No OPENAI_API_KEY was detected. "
+            "Add it to your local .env file or Streamlit secrets "
+            "to enable live synthesis."
+        )
+
+    if generate_clicked:
+        with st.spinner(
+            "Generating and validating synthesis..."
+        ):
+            try:
+                client = (
+                    OpenAISynthesisClient()
+                )
+
+                validated = run_synthesis(
+                    synthesis_input=(
+                        synthesis_input
+                    ),
+                    generator=client,
+                )
+
+                st.session_state[
+                    synthesis_key
+                ] = validated
+
+                st.session_state.pop(
+                    error_key,
+                    None,
+                )
+
+                existing = validated
+
+            except Exception as exc:  # noqa: BLE001
+                st.session_state[
+                    error_key
+                ] = (
+                    f"{type(exc).__name__}: "
+                    f"{exc}"
+                )
+
+                existing = None
+
+    error_message = (
+        st.session_state.get(
+            error_key
+        )
+    )
+
+    if error_message:
+        st.error(
+            "The synthesis was not accepted."
+        )
+
+        with st.expander(
+            "Technical detail"
+        ):
+            st.code(
+                error_message
+            )
+
+    if existing is not None:
+        _render_synthesis(
+            validated=existing,
+            synthesis_input=(
+                synthesis_input
+            ),
+            metric_labels=(
+                metric_labels
+            ),
+        )
+
+    else:
+        st.caption(
+            "No AI synthesis has been generated "
+            "for this company in the current session."
+        )
 
 
 with st.sidebar:
@@ -605,14 +1133,12 @@ with st.sidebar:
 
     st.divider()
 
-    selected_company = (
-        st.selectbox(
-            "Company",
-            options=tuple(
-                COMPANY_CONFIGS
-            ),
-            index=0,
-        )
+    selected_company = st.selectbox(
+        "Company",
+        options=tuple(
+            COMPANY_CONFIGS
+        ),
+        index=0,
     )
 
     config = (
@@ -626,12 +1152,10 @@ with st.sidebar:
         f"→ {config['current_document'].reporting_period}"
     )
 
-    st.selectbox(
+    st.text_input(
         "Comparison",
-        options=[
-            comparison_label,
-        ],
-        index=0,
+        value=comparison_label,
+        disabled=True,
     )
 
     st.divider()
@@ -797,6 +1321,15 @@ with summary_right:
         """,
         unsafe_allow_html=True,
     )
+
+
+st.write("")
+
+_render_ai_synthesis_section(
+    research_result=research_result,
+    report=report,
+    metric_labels=metric_labels,
+)
 
 
 st.write("")
