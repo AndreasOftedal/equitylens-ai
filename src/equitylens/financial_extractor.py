@@ -24,7 +24,9 @@ def _find_period_column(
 
 
 def _parse_decimal(raw_value: str) -> Decimal:
-    cleaned_value = raw_value.strip().replace(",", "")
+    cleaned_value = "".join(
+        raw_value.strip().split()
+    ).replace(",", "")
 
     if not cleaned_value:
         raise ValueError("Cannot convert an empty value to Decimal.")

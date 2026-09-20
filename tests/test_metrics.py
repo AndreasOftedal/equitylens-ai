@@ -49,6 +49,38 @@ def test_adjusted_operating_income_supports_source_label_variants():
     )
 
 
+@pytest.mark.parametrize(
+    ("metric_id", "source_label"),
+    (
+        (
+            "net_income",
+            "Net profit/loss",
+        ),
+        (
+            "basic_earnings_per_share",
+            "Earnings per share (EPS)",
+        ),
+        (
+            "operating_cash_flow",
+            "Cash flow from operations",
+        ),
+        (
+            "total_equity_production",
+            "Net petroleum production",
+        ),
+    ),
+)
+def test_aker_bp_source_labels_map_to_existing_metrics(
+    metric_id,
+    source_label,
+):
+    metric = get_metric_definition(
+        metric_id
+    )
+
+    assert source_label in metric.source_labels
+
+
 def test_get_metric_definition_returns_registered_metric():
     metric = get_metric_definition(
         "operating_cash_flow"

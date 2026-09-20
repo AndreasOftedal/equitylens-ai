@@ -34,6 +34,7 @@ NET_INCOME = MetricDefinition(
     canonical_name="Net income",
     source_labels=(
         "Net income/(loss)",
+        "Net profit/loss",
     ),
     unit="USD million",
     category="profitability",
@@ -44,6 +45,7 @@ BASIC_EARNINGS_PER_SHARE = MetricDefinition(
     canonical_name="Basic earnings per share",
     source_labels=(
         "Basic earnings per share (USD)",
+        "Earnings per share (EPS)",
     ),
     unit="USD per share",
     category="profitability",
@@ -85,6 +87,7 @@ OPERATING_CASH_FLOW = MetricDefinition(
     canonical_name="Cash flows provided by operating activities",
     source_labels=(
         "Cash flows provided by operating activities",
+        "Cash flow from operations",
     ),
     unit="USD million",
     category="cash_flow",
@@ -125,6 +128,7 @@ TOTAL_EQUITY_PRODUCTION = MetricDefinition(
     canonical_name="Total equity liquids and gas production",
     source_labels=(
         "Total equity liquids and gas production (mboe per day) [3]",
+        "Net petroleum production",
     ),
     unit="mboe/day",
     category="operations",

@@ -79,3 +79,29 @@ def test_extract_registered_financial_fact_accepts_alternate_source_label():
     assert fact.evidence.row_label == (
         "Adjusted operating income*"
     )
+
+
+def test_extract_registered_financial_fact_accepts_space_thousands_separator():
+    table = ParsedTable(
+        document_id="test-document",
+        page_number=4,
+        table_number=1,
+        columns=(
+            "Financial information",
+            "Q2 2026",
+        ),
+        rows=(
+            (
+                "Adjusted operating income/(loss)*",
+                "11 482",
+            ),
+        ),
+    )
+
+    fact = extract_registered_financial_fact(
+        table=table,
+        metric_id="adjusted_operating_income",
+        period="Q2 2026",
+    )
+
+    assert fact.value == Decimal(11482)

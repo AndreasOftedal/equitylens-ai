@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from equitylens.source_manifest import EQUINOR_SOURCES, DocumentSource
+from equitylens.source_manifest import ALL_SOURCES, DocumentSource
 
 
 class SourceIntegrityError(RuntimeError):
@@ -95,11 +95,11 @@ def download_all_sources(
     *,
     force: bool = False,
 ) -> list[Path]:
-    """Download and verify all source documents in the manifest."""
+    """Download and verify all registered source documents."""
 
     return [
         download_source(source, force=force)
-        for source in EQUINOR_SOURCES
+        for source in ALL_SOURCES
     ]
 
 
