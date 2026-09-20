@@ -344,14 +344,24 @@ def _guidance_allowed_numbers(
             )
         )
 
-        if (
-            item.numeric_value
-            is not None
+        for raw_value in (
+            item.numeric_value,
+            getattr(
+                item,
+                "numeric_lower_bound",
+                None,
+            ),
+            getattr(
+                item,
+                "numeric_upper_bound",
+                None,
+            ),
         ):
-            _add_number_and_absolute(
-                allowed,
-                item.numeric_value,
-            )
+            if raw_value is not None:
+                _add_number_and_absolute(
+                    allowed,
+                    raw_value,
+                )
 
     return allowed
 

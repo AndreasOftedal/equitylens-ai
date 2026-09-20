@@ -98,6 +98,8 @@ class SynthesisGuidanceItem:
     unit: str | None
     qualifier: str | None
     qualitative_value: str | None
+    numeric_lower_bound: str | None = None
+    numeric_upper_bound: str | None = None
 
 
 @dataclass(frozen=True)
@@ -171,9 +173,7 @@ def _build_narrative_evidence(
     assessed_evidence,
     role: EvidenceRole,
 ) -> SynthesisNarrativeEvidence:
-    sentence = (
-        assessed_evidence.sentence
-    )
+    sentence = assessed_evidence.sentence
 
     return SynthesisNarrativeEvidence(
         role=role,
@@ -287,6 +287,18 @@ def _build_metric(
 def _build_guidance_item(
     item,
 ) -> SynthesisGuidanceItem:
+    numeric_lower_bound = getattr(
+        item,
+        "numeric_lower_bound",
+        None,
+    )
+
+    numeric_upper_bound = getattr(
+        item,
+        "numeric_upper_bound",
+        None,
+    )
+
     return SynthesisGuidanceItem(
         metric_id=item.metric_id,
         target_period=item.target_period,
@@ -304,6 +316,16 @@ def _build_guidance_item(
         qualifier=item.qualifier,
         qualitative_value=(
             item.qualitative_value
+        ),
+        numeric_lower_bound=(
+            str(numeric_lower_bound)
+            if numeric_lower_bound is not None
+            else None
+        ),
+        numeric_upper_bound=(
+            str(numeric_upper_bound)
+            if numeric_upper_bound is not None
+            else None
         ),
     )
 
