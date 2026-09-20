@@ -5,7 +5,7 @@ from itertools import pairwise
 from equitylens.text_chunks import TextChunk
 
 _SENTENCE_BOUNDARY = re.compile(
-    r"(?<=[.!?])\s+(?=[A-Z0-9“\"'])"
+    r"(?<=[.!?])\s+(?=[A-Z0-9â€œ\"'])"
 )
 
 
@@ -37,6 +37,103 @@ def _build_sentence_id(
     )
 
 
+def _numeric_token_ratio(
+    text: str,
+) -> float:
+    tokens = text.split()
+
+    if not tokens:
+        return 0.0
+
+    numeric_tokens = sum(
+        any(
+            character.isdigit()
+            for character in token
+        )
+        for token in tokens
+    )
+
+    return numeric_tokens / len(tokens)
+
+
+def _looks_table_like_line(
+    line: str,
+) -> bool:
+    stripped = line.strip()
+
+    if not stripped:
+        return False
+
+    return (
+        _numeric_token_ratio(stripped) >= 0.50
+    )
+
+
+def _looks_narrative_line(
+    line: str,
+) -> bool:
+    stripped = line.strip()
+
+    if not stripped:
+        return False
+
+    words = stripped.split()
+
+    if len(words) < 5:
+        return False
+
+    if not stripped[0].isalpha():
+        return False
+
+    return any(
+        character.islower()
+        for character in stripped
+    )
+
+
+def _table_to_narrative_boundaries(
+    text: str,
+) -> tuple[int, ...]:
+    """
+    Detect transitions from table-like PDF text into narrative prose.
+
+    PDF extraction may place a table and the following paragraph in the
+    same text block without punctuation between them. In that case the
+    normal sentence-boundary regex cannot separate the narrative from
+    the table.
+
+    A structural boundary is added only when a numeric-heavy line is
+    immediately followed by a sentence-like narrative line.
+    """
+
+    boundaries: list[int] = []
+
+    lines = text.splitlines(
+        keepends=True
+    )
+
+    offset = 0
+
+    for index, line in enumerate(
+        lines[:-1]
+    ):
+        next_line = lines[index + 1]
+
+        offset += len(line)
+
+        if (
+            _looks_table_like_line(line)
+            and _looks_narrative_line(
+                next_line
+            )
+        ):
+            boundaries.append(
+                offset
+            )
+
+    return tuple(boundaries)
+
+
 def split_chunk_into_sentences(
     chunk: TextChunk,
 ) -> tuple[EvidenceSentence, ...]:
@@ -45,21 +142,35 @@ def split_chunk_into_sentences(
     exact chunk- and page-level provenance.
 
     Sentence splitting is intentionally deterministic and lightweight.
+    In addition to punctuation boundaries, table-to-narrative transitions
+    are detected so extracted PDF tables do not absorb the prose that
+    follows them.
     """
 
     if not chunk.text.strip():
         return ()
 
-    boundaries = [
-        0,
-        *(
-            match.end()
-            for match in _SENTENCE_BOUNDARY.finditer(
-                chunk.text
-            )
-        ),
-        len(chunk.text),
-    ]
+    punctuation_boundaries = (
+        match.end()
+        for match in _SENTENCE_BOUNDARY.finditer(
+            chunk.text
+        )
+    )
+
+    structural_boundaries = (
+        _table_to_narrative_boundaries(
+            chunk.text
+        )
+    )
+
+    boundaries = sorted(
+        {
+            0,
+            *punctuation_boundaries,
+            *structural_boundaries,
+            len(chunk.text),
+        }
+    )
 
     sentences: list[EvidenceSentence] = []
 
@@ -78,8 +189,14 @@ def split_chunk_into_sentences(
             - len(raw_text.rstrip())
         )
 
-        actual_start = start + leading_whitespace
-        actual_end = end - trailing_whitespace
+        actual_start = (
+            start
+            + leading_whitespace
+        )
+        actual_end = (
+            end
+            - trailing_whitespace
+        )
 
         text = chunk.text[
             actual_start:actual_end

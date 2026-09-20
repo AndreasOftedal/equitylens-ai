@@ -192,7 +192,7 @@ def test_real_unified_pipeline_respects_conservative_evidence_gate(
 
     assert (
         adjusted_operating_income.availability
-        == "aligned_context_only"
+        == "unavailable"
     )
 
     assert (

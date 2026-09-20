@@ -9,6 +9,13 @@ MetricCategory = Literal[
     "capital_structure",
 ]
 
+MetricScope = Literal[
+    "group",
+    "segment",
+    "asset",
+    "unknown",
+]
+
 
 @dataclass(frozen=True)
 class MetricDefinition:
@@ -17,6 +24,7 @@ class MetricDefinition:
     source_labels: tuple[str, ...]
     unit: str
     category: MetricCategory
+    scope: MetricScope
 
 
 NET_OPERATING_INCOME = MetricDefinition(
@@ -27,6 +35,7 @@ NET_OPERATING_INCOME = MetricDefinition(
     ),
     unit="USD million",
     category="profitability",
+    scope="group",
 )
 
 NET_INCOME = MetricDefinition(
@@ -38,6 +47,7 @@ NET_INCOME = MetricDefinition(
     ),
     unit="USD million",
     category="profitability",
+    scope="group",
 )
 
 BASIC_EARNINGS_PER_SHARE = MetricDefinition(
@@ -49,6 +59,7 @@ BASIC_EARNINGS_PER_SHARE = MetricDefinition(
     ),
     unit="USD per share",
     category="profitability",
+    scope="group",
 )
 
 ADJUSTED_OPERATING_INCOME = MetricDefinition(
@@ -60,6 +71,7 @@ ADJUSTED_OPERATING_INCOME = MetricDefinition(
     ),
     unit="USD million",
     category="profitability",
+    scope="group",
 )
 
 ADJUSTED_NET_INCOME = MetricDefinition(
@@ -70,6 +82,7 @@ ADJUSTED_NET_INCOME = MetricDefinition(
     ),
     unit="USD million",
     category="profitability",
+    scope="group",
 )
 
 ADJUSTED_EARNINGS_PER_SHARE = MetricDefinition(
@@ -80,6 +93,7 @@ ADJUSTED_EARNINGS_PER_SHARE = MetricDefinition(
     ),
     unit="USD per share",
     category="profitability",
+    scope="group",
 )
 
 OPERATING_CASH_FLOW = MetricDefinition(
@@ -91,6 +105,7 @@ OPERATING_CASH_FLOW = MetricDefinition(
     ),
     unit="USD million",
     category="cash_flow",
+    scope="group",
 )
 
 OPERATING_CASH_FLOW_AFTER_TAX = MetricDefinition(
@@ -101,6 +116,7 @@ OPERATING_CASH_FLOW_AFTER_TAX = MetricDefinition(
     ),
     unit="USD million",
     category="cash_flow",
+    scope="group",
 )
 
 NET_CASH_FLOW_BEFORE_CAPITAL_DISTRIBUTION = MetricDefinition(
@@ -111,6 +127,7 @@ NET_CASH_FLOW_BEFORE_CAPITAL_DISTRIBUTION = MetricDefinition(
     ),
     unit="USD million",
     category="cash_flow",
+    scope="group",
 )
 
 GROUP_AVERAGE_LIQUIDS_PRICE = MetricDefinition(
@@ -121,6 +138,7 @@ GROUP_AVERAGE_LIQUIDS_PRICE = MetricDefinition(
     ),
     unit="USD/bbl",
     category="market",
+    scope="group",
 )
 
 TOTAL_EQUITY_PRODUCTION = MetricDefinition(
@@ -132,6 +150,7 @@ TOTAL_EQUITY_PRODUCTION = MetricDefinition(
     ),
     unit="mboe/day",
     category="operations",
+    scope="group",
 )
 
 TOTAL_POWER_GENERATION = MetricDefinition(
@@ -142,6 +161,7 @@ TOTAL_POWER_GENERATION = MetricDefinition(
     ),
     unit="TWh",
     category="operations",
+    scope="group",
 )
 
 RENEWABLE_POWER_GENERATION = MetricDefinition(
@@ -152,6 +172,7 @@ RENEWABLE_POWER_GENERATION = MetricDefinition(
     ),
     unit="TWh",
     category="operations",
+    scope="group",
 )
 
 

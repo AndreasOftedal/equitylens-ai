@@ -266,6 +266,69 @@ def test_assessment_preserves_sentence_provenance():
     )
 
 
+def test_adjacent_qoq_context_can_support_causal_sentence():
+    assessment = assess_retrieved_evidence(
+        query="What drove production?",
+        expected_comparison_type="qoq",
+        results=(
+            _result(
+                
+                    "Production decreased compared with "
+                    "the previous quarter. "
+                    "The decrease was primarily due to "
+                    "planned maintenance."
+                
+            ),
+        ),
+    )
+
+    assert (
+        assessment.availability
+        == "direct_explanation"
+    )
+
+    assert len(
+        assessment.direct_explanations
+    ) == 1
+
+    evidence = (
+        assessment.direct_explanations[0]
+    )
+
+    assert evidence.sentence.text == (
+        "The decrease was primarily due to "
+        "planned maintenance."
+    )
+
+    assert len(
+        evidence.context_sentences
+    ) == 1
+
+    context = (
+        evidence.context_sentences[0]
+    )
+
+    assert context.text == (
+        "Production decreased compared with "
+        "the previous quarter."
+    )
+
+    assert (
+        context.document_id
+        == evidence.sentence.document_id
+    )
+
+    assert (
+        context.page_number
+        == evidence.sentence.page_number
+    )
+
+    assert (
+        context.sentence_index + 1
+        == evidence.sentence.sentence_index
+    )
+
+
 def test_empty_query_is_rejected():
     with pytest.raises(
         ValueError,

@@ -14,6 +14,9 @@ from equitylens.evidence_retrieval import (
 from equitylens.financial_dataset import (
     MultiPeriodFinancialDataset,
 )
+from equitylens.metrics import (
+    get_metric_definition,
+)
 from equitylens.parser import ParsedPage
 from equitylens.text_chunks import chunk_pages
 
@@ -35,8 +38,12 @@ def build_evidence_assessments(
     with validated evidence queries.
 
     FinancialChange remains the source of truth for
-    the comparison basis. Metrics without a validated
-    evidence query are intentionally skipped.
+    the comparison basis. Metric definitions provide
+    the analytical scope used to guard evidence
+    eligibility.
+
+    Metrics without a validated evidence query are
+    intentionally skipped.
     """
 
     if not document_id.strip():
@@ -93,6 +100,12 @@ def build_evidence_assessments(
         if query is None:
             continue
 
+        metric_definition = (
+            get_metric_definition(
+                metric_id
+            )
+        )
+
         change = dataset.compare(
             metric_id=metric_id,
             from_period=from_period,
@@ -113,6 +126,9 @@ def build_evidence_assessments(
                 change.comparison_type
             ),
             results=retrieved,
+            metric_scope=(
+                metric_definition.scope
+            ),
         )
 
     return assessments

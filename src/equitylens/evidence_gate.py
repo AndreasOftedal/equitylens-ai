@@ -2,8 +2,12 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-from equitylens.evidence_alignment import detect_evidence_comparison_types
-from equitylens.evidence_sentences import EvidenceSentence
+from equitylens.evidence_alignment import (
+    detect_evidence_comparison_types,
+)
+from equitylens.evidence_sentences import (
+    EvidenceSentence,
+)
 from equitylens.periods import ComparisonType
 
 EvidenceGateStatus = Literal[
@@ -56,13 +60,20 @@ _NORMALIZE_PATTERN = re.compile(
     r"[^a-z0-9]+"
 )
 
+_QUARTER_COLUMN_PATTERN = re.compile(
+    r"\bq[1-4]\s+20\d{2}\b",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class EvidenceGateResult:
     sentence_id: str
     status: EvidenceGateStatus
     query_subject: str
-    detected_comparison_types: frozenset[ComparisonType]
+    detected_comparison_types: frozenset[
+        ComparisonType
+    ]
     metric_match: bool
     causal_signal: bool
     usable_as_direct_explanation: bool
@@ -142,7 +153,9 @@ def _phrase_positions(
     return tuple(
         match.start()
         for match in re.finditer(
-            re.escape(normalized_phrase),
+            re.escape(
+                normalized_phrase
+            ),
             normalized_sentence,
         )
     )
@@ -154,8 +167,10 @@ def _metric_is_explained_outcome(
     causal_signal: bool,
 ) -> bool:
     """
-    Determine whether the queried metric is the outcome being discussed,
-    rather than merely appearing inside the explanation of another metric.
+    Determine whether the queried metric is the
+    outcome being discussed, rather than merely
+    appearing inside the explanation of another
+    metric.
 
     Examples:
 
@@ -175,7 +190,9 @@ def _metric_is_explained_outcome(
 
     subject_positions = _subject_positions(
         query_subject=query_subject,
-        normalized_sentence=normalized_sentence,
+        normalized_sentence=(
+            normalized_sentence
+        ),
     )
 
     if not subject_positions:
@@ -186,38 +203,51 @@ def _metric_is_explained_outcome(
 
     outcome_first_positions = tuple(
         position
-        for phrase in _OUTCOME_FIRST_CAUSAL_PHRASES
+        for phrase
+        in _OUTCOME_FIRST_CAUSAL_PHRASES
         for position in _phrase_positions(
             phrase=phrase,
-            normalized_sentence=normalized_sentence,
+            normalized_sentence=(
+                normalized_sentence
+            ),
         )
     )
 
     cause_first_positions = tuple(
         position
-        for phrase in _CAUSE_FIRST_CAUSAL_PHRASES
+        for phrase
+        in _CAUSE_FIRST_CAUSAL_PHRASES
         for position in _phrase_positions(
             phrase=phrase,
-            normalized_sentence=normalized_sentence,
+            normalized_sentence=(
+                normalized_sentence
+            ),
         )
     )
 
-    for subject_start, subject_end in subject_positions:
+    for (
+        subject_start,
+        subject_end,
+    ) in subject_positions:
         if any(
             position >= subject_end
-            for position in outcome_first_positions
+            for position
+            in outcome_first_positions
         ):
             return True
 
         if any(
             position < subject_start
-            for position in cause_first_positions
+            for position
+            in cause_first_positions
         ):
             return True
 
     raw_lower = sentence.text.lower()
 
-    for phrase in _OUTCOME_FIRST_CAUSAL_PHRASES:
+    for phrase in (
+        _OUTCOME_FIRST_CAUSAL_PHRASES
+    ):
         phrase_position = raw_lower.find(
             phrase
         )
@@ -245,7 +275,9 @@ def _metric_is_explained_outcome(
 
         if _subject_positions(
             query_subject=query_subject,
-            normalized_sentence=after_prefix,
+            normalized_sentence=(
+                after_prefix
+            ),
         ):
             return True
 
@@ -255,7 +287,9 @@ def _metric_is_explained_outcome(
 def _contains_causal_signal(
     sentence: EvidenceSentence,
 ) -> bool:
-    normalized_sentence = sentence.text.lower()
+    normalized_sentence = (
+        sentence.text.lower()
+    )
 
     return any(
         phrase in normalized_sentence
@@ -279,7 +313,100 @@ def _numeric_token_ratio(
         for token in tokens
     )
 
-    return numeric_tokens / len(tokens)
+    return (
+        numeric_tokens
+        / len(tokens)
+    )
+
+
+def _non_empty_lines(
+    text: str,
+) -> tuple[str, ...]:
+    return tuple(
+        line.strip()
+        for line in text.splitlines()
+        if line.strip()
+    )
+
+
+def _is_uppercase_structure_line(
+    line: str,
+) -> bool:
+    has_alpha = any(
+        character.isalpha()
+        for character in line
+    )
+
+    return (
+        has_alpha
+        and line == line.upper()
+    )
+
+
+def _looks_like_fragmented_document_structure(
+    text: str,
+) -> bool:
+    """
+    Detect report chrome, table headers and similar
+    document structure that has been extracted as
+    one sentence-like block.
+
+    The rule deliberately relies on layout
+    characteristics rather than company-specific
+    vocabulary.
+    """
+
+    lines = _non_empty_lines(
+        text
+    )
+
+    if len(lines) < 8:
+        return False
+
+    short_line_count = sum(
+        len(line.split()) <= 4
+        for line in lines
+    )
+
+    uppercase_line_count = sum(
+        _is_uppercase_structure_line(
+            line
+        )
+        for line in lines
+    )
+
+    quarter_column_count = sum(
+        bool(
+            _QUARTER_COLUMN_PATTERN.search(
+                line
+            )
+        )
+        for line in lines
+    )
+
+    short_line_ratio = (
+        short_line_count
+        / len(lines)
+    )
+
+    uppercase_line_ratio = (
+        uppercase_line_count
+        / len(lines)
+    )
+
+    fragmented_layout = (
+        short_line_ratio >= 0.65
+    )
+
+    structural_signal = (
+        uppercase_line_ratio >= 0.20
+        or quarter_column_count >= 2
+    )
+
+    return (
+        fragmented_layout
+        and structural_signal
+    )
 
 
 def _looks_non_narrative(
@@ -295,6 +422,9 @@ def _looks_non_narrative(
             len(sentence.text) >= 500
             and numeric_ratio >= 0.12
         )
+        or _looks_like_fragmented_document_structure(
+            sentence.text
+        )
     )
 
 
@@ -304,43 +434,64 @@ def assess_sentence_evidence(
     sentence: EvidenceSentence,
 ) -> EvidenceGateResult:
     """
-    Determine whether a sentence can support a direct explanation
-    of a specific financial change.
+    Determine whether a sentence can support a
+    direct explanation of a specific financial
+    change.
 
     Direct explanatory evidence must:
-    1. discuss the queried metric as the outcome being explained,
-    2. use the same comparison basis as the financial calculation,
+    1. discuss the queried metric as the outcome
+       being explained,
+    2. use the same comparison basis as the
+       financial calculation,
     3. contain explanatory or causal language,
-    4. resemble narrative rather than table content.
+    4. resemble narrative rather than table or
+       document-structure content.
     """
 
     query_subject = extract_query_subject(
         query
     )
 
-    detected = detect_evidence_comparison_types(
-        sentence.text
+    detected = (
+        detect_evidence_comparison_types(
+            sentence.text
+        )
     )
 
-    causal_signal = _contains_causal_signal(
-        sentence
+    causal_signal = (
+        _contains_causal_signal(
+            sentence
+        )
     )
 
-    metric_match = _metric_is_explained_outcome(
-        query_subject=query_subject,
-        sentence=sentence,
-        causal_signal=causal_signal,
-    )
-
-    if expected_comparison_type == "other":
-        return EvidenceGateResult(
-            sentence_id=sentence.sentence_id,
-            status="unsupported_comparison",
+    metric_match = (
+        _metric_is_explained_outcome(
             query_subject=query_subject,
-            detected_comparison_types=detected,
+            sentence=sentence,
+            causal_signal=causal_signal,
+        )
+    )
+
+    if (
+        expected_comparison_type
+        == "other"
+    ):
+        return EvidenceGateResult(
+            sentence_id=(
+                sentence.sentence_id
+            ),
+            status=(
+                "unsupported_comparison"
+            ),
+            query_subject=query_subject,
+            detected_comparison_types=(
+                detected
+            ),
             metric_match=metric_match,
             causal_signal=causal_signal,
-            usable_as_direct_explanation=False,
+            usable_as_direct_explanation=(
+                False
+            ),
             reason=(
                 "The financial comparison is not "
                 "classified as QoQ or YoY."
@@ -349,13 +500,19 @@ def assess_sentence_evidence(
 
     if not metric_match:
         return EvidenceGateResult(
-            sentence_id=sentence.sentence_id,
+            sentence_id=(
+                sentence.sentence_id
+            ),
             status="query_mismatch",
             query_subject=query_subject,
-            detected_comparison_types=detected,
+            detected_comparison_types=(
+                detected
+            ),
             metric_match=False,
             causal_signal=causal_signal,
-            usable_as_direct_explanation=False,
+            usable_as_direct_explanation=(
+                False
+            ),
             reason=(
                 "The queried metric is not the "
                 "outcome being explained."
@@ -366,43 +523,63 @@ def assess_sentence_evidence(
         sentence
     ):
         return EvidenceGateResult(
-            sentence_id=sentence.sentence_id,
+            sentence_id=(
+                sentence.sentence_id
+            ),
             status="non_narrative",
             query_subject=query_subject,
-            detected_comparison_types=detected,
+            detected_comparison_types=(
+                detected
+            ),
             metric_match=True,
             causal_signal=causal_signal,
-            usable_as_direct_explanation=False,
+            usable_as_direct_explanation=(
+                False
+            ),
             reason=(
                 "The sentence appears to contain "
-                "table-like rather than narrative evidence."
+                "table-like or document-structure "
+                "content rather than narrative "
+                "evidence."
             ),
         )
 
     if not detected:
         return EvidenceGateResult(
-            sentence_id=sentence.sentence_id,
+            sentence_id=(
+                sentence.sentence_id
+            ),
             status="period_unknown",
             query_subject=query_subject,
-            detected_comparison_types=detected,
+            detected_comparison_types=(
+                detected
+            ),
             metric_match=True,
             causal_signal=causal_signal,
-            usable_as_direct_explanation=False,
+            usable_as_direct_explanation=(
+                False
+            ),
             reason=(
-                "No explicit QoQ or YoY comparison "
-                "basis was detected."
+                "No explicit QoQ or YoY "
+                "comparison basis was detected."
             ),
         )
 
     if len(detected) > 1:
         return EvidenceGateResult(
-            sentence_id=sentence.sentence_id,
+            sentence_id=(
+                sentence.sentence_id
+            ),
             status="period_ambiguous",
             query_subject=query_subject,
-            detected_comparison_types=detected,
+            detected_comparison_types=(
+                detected
+            ),
             metric_match=True,
             causal_signal=causal_signal,
-            usable_as_direct_explanation=False,
+            usable_as_direct_explanation=(
+                False
+            ),
             reason=(
                 "The sentence contains multiple "
                 "comparison bases."
@@ -410,7 +587,9 @@ def assess_sentence_evidence(
         )
 
     detected_type = next(
-        iter(detected)
+        iter(
+            detected
+        )
     )
 
     if (
@@ -418,46 +597,65 @@ def assess_sentence_evidence(
         != expected_comparison_type
     ):
         return EvidenceGateResult(
-            sentence_id=sentence.sentence_id,
+            sentence_id=(
+                sentence.sentence_id
+            ),
             status="period_mismatch",
             query_subject=query_subject,
-            detected_comparison_types=detected,
+            detected_comparison_types=(
+                detected
+            ),
             metric_match=True,
             causal_signal=causal_signal,
-            usable_as_direct_explanation=False,
+            usable_as_direct_explanation=(
+                False
+            ),
             reason=(
-                "The sentence comparison basis does "
-                "not match the financial comparison."
+                "The sentence comparison basis "
+                "does not match the financial "
+                "comparison."
             ),
         )
 
     if not causal_signal:
         return EvidenceGateResult(
-            sentence_id=sentence.sentence_id,
+            sentence_id=(
+                sentence.sentence_id
+            ),
             status="aligned_context",
             query_subject=query_subject,
-            detected_comparison_types=detected,
+            detected_comparison_types=(
+                detected
+            ),
             metric_match=True,
             causal_signal=False,
-            usable_as_direct_explanation=False,
+            usable_as_direct_explanation=(
+                False
+            ),
             reason=(
-                "The sentence matches the metric and "
-                "comparison basis but does not contain "
-                "an explanatory causal signal."
+                "The sentence matches the metric "
+                "and comparison basis but does not "
+                "contain an explanatory causal "
+                "signal."
             ),
         )
 
     return EvidenceGateResult(
-        sentence_id=sentence.sentence_id,
+        sentence_id=(
+            sentence.sentence_id
+        ),
         status="direct_explanation",
         query_subject=query_subject,
-        detected_comparison_types=detected,
+        detected_comparison_types=(
+            detected
+        ),
         metric_match=True,
         causal_signal=True,
         usable_as_direct_explanation=True,
         reason=(
-            "The queried metric is the explained outcome, "
-            "the comparison basis matches and the sentence "
-            "contains causal language."
+            "The queried metric is the explained "
+            "outcome, the comparison basis matches "
+            "and the sentence contains causal "
+            "language."
         ),
     )

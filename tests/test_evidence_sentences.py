@@ -181,3 +181,51 @@ def test_qoq_and_yoy_statements_are_separated():
     assert "same quarter last year" in (
         sentences[1].text
     )
+
+
+def test_table_prefix_is_separated_from_following_narrative():
+    chunk = _chunk(
+        
+            "Cash flow\n"
+            "Q2 2026\n"
+            "Q1 2026\n"
+            "Q2 2025\n"
+            "Cash flow from operations\n"
+            "3 123\n"
+            "2 013\n"
+            "1 240\n"
+            "Cash and cash equivalents\n"
+            "2 492\n"
+            "1 862\n"
+            "2 745\n"
+            "Net cash flow from operating activities was USD 3,123 "
+            "(2,013) million in the quarter, primarily reflecting "
+            "higher income in the quarter and changes in working "
+            "capital, partly offset by higher tax payments."
+        
+    )
+
+    sentences = split_chunk_into_sentences(
+        chunk
+    )
+
+    assert len(sentences) == 2
+
+    assert sentences[0].text.startswith(
+        "Cash flow"
+    )
+
+    assert sentences[1].text.startswith(
+        "Net cash flow from operating activities"
+    )
+
+    assert (
+        "primarily reflecting higher income"
+        in sentences[1].text
+    )
+
+    for sentence in sentences:
+        assert chunk.text[
+            sentence.chunk_start_char:
+            sentence.chunk_end_char
+        ] == sentence.text

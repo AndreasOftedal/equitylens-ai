@@ -132,6 +132,62 @@ def test_uses_financial_change_comparison_type():
     )
 
 
+def test_passes_metric_scope_to_evidence_assessment(
+    monkeypatch,
+):
+    dataset = FakeDataset()
+
+    captured: dict[
+        str,
+        object,
+    ] = {}
+
+    def fake_assess_retrieved_evidence(
+        *,
+        query,
+        expected_comparison_type,
+        results,
+        metric_scope=None,
+    ):
+        captured["query"] = query
+        captured[
+            "expected_comparison_type"
+        ] = expected_comparison_type
+        captured["results"] = results
+        captured["metric_scope"] = (
+            metric_scope
+        )
+
+        return SimpleNamespace(
+            query=query,
+            expected_comparison_type=(
+                expected_comparison_type
+            ),
+        )
+
+    monkeypatch.setattr(
+        "equitylens.evidence_pipeline."
+        "assess_retrieved_evidence",
+        fake_assess_retrieved_evidence,
+    )
+
+    build_evidence_assessments(
+        document_id=DOCUMENT_ID,
+        pages=_pages(),
+        dataset=dataset,
+        metric_ids=(
+            "total_equity_production",
+        ),
+        from_period="Q1 2026",
+        to_period="Q2 2026",
+    )
+
+    assert (
+        captured["metric_scope"]
+        == "group"
+    )
+
+
 def test_unvalidated_metric_is_skipped():
     dataset = FakeDataset()
 

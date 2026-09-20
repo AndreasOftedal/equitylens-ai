@@ -37,6 +37,21 @@ def test_registry_contains_all_core_metrics():
     assert len(METRIC_REGISTRY) == 13
 
 
+def test_core_metrics_have_group_scope():
+    assert {
+        metric.scope
+        for metric in CORE_FINANCIAL_METRICS
+    } == {"group"}
+
+
+def test_total_equity_production_is_group_metric():
+    metric = get_metric_definition(
+        "total_equity_production"
+    )
+
+    assert metric.scope == "group"
+
+
 def test_adjusted_operating_income_supports_source_label_variants():
     metric = get_metric_definition(
         "adjusted_operating_income"

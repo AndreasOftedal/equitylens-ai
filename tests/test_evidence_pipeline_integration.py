@@ -111,7 +111,7 @@ def test_net_operating_income_has_no_direct_qoq_explanation(
     )
 
 
-def test_adjusted_operating_income_has_aligned_qoq_context(
+def test_adjusted_operating_income_rejects_segment_context_for_group_metric(
     evidence_assessments,
 ):
     assessment = (
@@ -122,7 +122,7 @@ def test_adjusted_operating_income_has_aligned_qoq_context(
 
     assert (
         assessment.availability
-        == "aligned_context_only"
+        == "unavailable"
     )
 
     assert (
@@ -130,40 +130,43 @@ def test_adjusted_operating_income_has_aligned_qoq_context(
         == ()
     )
 
-    assert len(
+    assert (
         assessment.aligned_context
-    ) >= 1
+        == ()
+    )
 
-    assert any(
-        "prior quarter"
-        in evidence.sentence.text.lower()
-        for evidence
-        in assessment.aligned_context
+    rejection_counts = dict(
+        assessment.rejection_counts
+    )
+
+    assert (
+        rejection_counts[
+            "scope_mismatch"
+        ]
+        >= 1
     )
 
 
 def test_real_evidence_preserves_current_document_provenance(
     evidence_assessments,
 ):
-    assessment = (
-        evidence_assessments[
-            "adjusted_operating_income"
-        ]
-    )
-
-    for evidence in (
-        assessment.aligned_context
+    for assessment in (
+        evidence_assessments.values()
     ):
-        assert (
-            evidence.sentence.document_id
-            == EQUINOR_Q2_2026.document_id
-        )
+        for evidence in (
+            assessment.direct_explanations
+            + assessment.aligned_context
+        ):
+            assert (
+                evidence.sentence.document_id
+                == EQUINOR_Q2_2026.document_id
+            )
 
-        assert (
-            evidence.sentence.page_number
-            >= 1
-        )
+            assert (
+                evidence.sentence.page_number
+                >= 1
+            )
 
-        assert (
-            evidence.sentence.text
-        )
+            assert (
+                evidence.sentence.text
+            )

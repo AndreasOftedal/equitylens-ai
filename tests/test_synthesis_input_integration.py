@@ -257,7 +257,7 @@ def test_real_synthesis_input_keeps_evidence_semantics_conservative(
     assert (
         adjusted_operating_income
         .evidence_availability
-        == "aligned_context_only"
+        == "unavailable"
     )
 
     assert (
@@ -283,10 +283,11 @@ def test_real_synthesis_input_keeps_evidence_semantics_conservative(
         == ()
     )
 
-    assert len(
+    assert (
         adjusted_operating_income
         .aligned_context
-    ) >= 1
+        == ()
+    )
 
 
 def test_real_synthesis_input_preserves_consistency_guardrails(
