@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+import pytest
+
 from equitylens.documents import (
     AKER_BP_Q1_2026,
     AKER_BP_Q2_2026,
@@ -8,6 +10,8 @@ from equitylens.guidance_pipeline import (
     build_aker_bp_guidance_report,
 )
 from equitylens.parser import parse_pdf
+
+pytestmark = pytest.mark.integration
 
 
 def _parse(document):

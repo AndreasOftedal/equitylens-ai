@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+import pytest
+
 from equitylens.aker_bp_guidance_extractor import (
     extract_aker_bp_formal_outlook_guidance,
 )
@@ -9,6 +11,8 @@ from equitylens.documents import (
 )
 from equitylens.guidance import compare_guidance
 from equitylens.parser import parse_pdf
+
+pytestmark = pytest.mark.integration
 
 
 def _extract(document):
