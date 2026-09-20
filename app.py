@@ -201,25 +201,39 @@ st.markdown(
         margin-bottom: 1.8rem;
     }
 
-    .status-row {
+    .system-status-row {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.55rem;
+        gap: 0.9rem;
         margin: 0.8rem 0 1.7rem 0;
-    }
-
-    .pill {
-        border: 1px solid var(--border);
-        background: var(--panel);
-        color: #bfd0da;
-        padding: 0.32rem 0.62rem;
-        border-radius: 999px;
+        color: #9fb4c1;
         font-size: 0.76rem;
     }
 
-    .pill-good {
-        border-color: rgba(80, 214, 176, 0.38);
-        color: #75e2c2;
+    .system-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.42rem;
+        padding: 0.08rem 0;
+        cursor: default;
+        user-select: none;
+    }
+
+    .status-dot {
+        width: 0.42rem;
+        height: 0.42rem;
+        border-radius: 50%;
+        background: #547487;
+        box-shadow: 0 0 0 3px rgba(84, 116, 135, 0.1);
+    }
+
+    .system-tag-good {
+        color: #8ce7cc;
+    }
+
+    .system-tag-good .status-dot {
+        background: var(--accent);
+        box-shadow: 0 0 0 3px rgba(80, 214, 176, 0.1);
     }
 
     .section-label {
@@ -304,25 +318,57 @@ st.markdown(
 
     .source-box {
         border-left: 2px solid var(--blue);
-        padding: 0.25rem 0 0.25rem 0.8rem;
-        margin-bottom: 0.9rem;
+        padding: 0.15rem 0 0.15rem 0.8rem;
     }
 
     .source-title {
         color: #dce8ee;
-        font-weight: 600;
+        font-weight: 650;
+    }
+
+    .source-value {
+        color: #f4f9fb;
+        font-size: 1.08rem;
+        font-weight: 650;
+        margin-top: 0.25rem;
     }
 
     .source-meta {
         color: var(--muted);
         font-size: 0.8rem;
-        margin-top: 0.2rem;
+        line-height: 1.5;
+        margin-top: 0.3rem;
     }
 
-    .evidence-state {
-        color: #8fa6b5;
-        font-size: 0.82rem;
-        margin-bottom: 0.35rem;
+    .evidence-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.38rem;
+        width: fit-content;
+        border-radius: 999px;
+        padding: 0.2rem 0.5rem;
+        margin: 0.15rem 0 0.65rem 0;
+        font-size: 0.72rem;
+        font-weight: 650;
+        letter-spacing: 0.02em;
+    }
+
+    .evidence-direct {
+        color: #85e7c9;
+        background: rgba(80, 214, 176, 0.08);
+        border: 1px solid rgba(80, 214, 176, 0.2);
+    }
+
+    .evidence-context {
+        color: #9ecbf0;
+        background: rgba(103, 174, 245, 0.08);
+        border: 1px solid rgba(103, 174, 245, 0.2);
+    }
+
+    .evidence-muted {
+        color: #9fb0ba;
+        background: rgba(143, 166, 181, 0.06);
+        border: 1px solid rgba(143, 166, 181, 0.16);
     }
 
     hr {
@@ -393,6 +439,43 @@ def _format_absolute_change(
         return f"{sign}${_format_decimal(value, decimals=2)}"
 
     return f"{sign}{_format_decimal(value)}"
+
+
+def _document_source_url(
+    document_id: str,
+    company_config: dict,
+) -> str | None:
+    for key in (
+        "previous_document",
+        "current_document",
+    ):
+        document = company_config[key]
+        candidate_id = getattr(
+            document,
+            "document_id",
+            None,
+        )
+
+        if candidate_id is None:
+            candidate_id = getattr(
+                document,
+                "id",
+                None,
+            )
+
+        if candidate_id != document_id:
+            continue
+
+        source_url = getattr(
+            document,
+            "source_url",
+            None,
+        )
+
+        if source_url:
+            return str(source_url)
+
+    return None
 
 
 def _guidance_label(
@@ -1254,12 +1337,22 @@ st.markdown(
 
 st.markdown(
     """
-    <div class="status-row">
-        <span class="pill pill-good">Validated pipeline</span>
-        <span class="pill">Deterministic finance</span>
-        <span class="pill">Evidence grounded</span>
-        <span class="pill">Auditable provenance</span>
-        <span class="pill">Guidance tracked separately</span>
+    <div class="system-status-row">
+        <span class="system-tag system-tag-good">
+            <span class="status-dot"></span>Validated pipeline
+        </span>
+        <span class="system-tag">
+            <span class="status-dot"></span>Deterministic finance
+        </span>
+        <span class="system-tag">
+            <span class="status-dot"></span>Evidence grounded
+        </span>
+        <span class="system-tag">
+            <span class="status-dot"></span>Auditable provenance
+        </span>
+        <span class="system-tag">
+            <span class="status-dot"></span>Guidance tracked separately
+        </span>
     </div>
     """,
     unsafe_allow_html=True,
@@ -1589,85 +1682,131 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-evidence_columns = (
-    st.columns(
-        len(metric_ids),
-        gap="small",
-    )
+st.caption(
+    "Evidence status reflects whether management narrative is eligible "
+    "to support a claim about the measured period change. Related text "
+    "is kept separate when it does not meet that standard."
 )
 
-for column, metric_id in zip(
-    evidence_columns,
-    metric_ids,
-    strict=True,
+evidence_columns = st.columns(
+    2,
+    gap="medium",
+)
+
+for index, metric_id in enumerate(
+    metric_ids
 ):
-    result = (
-        metric_results[
-            metric_id
-        ]
-    )
+    if index > 0 and index % 2 == 0:
+        evidence_columns = st.columns(
+            2,
+            gap="medium",
+        )
+
+    column = evidence_columns[
+        index % 2
+    ]
+
+    result = metric_results[
+        metric_id
+    ]
 
     assessment = (
         result.evidence_assessment
     )
 
+    evidence_items = ()
+
     if assessment is None:
-        availability = (
-            "Not evaluated"
+        availability = "Not evaluated"
+        badge_class = "evidence-muted"
+        explanation = (
+            "No validated narrative evidence query is "
+            "registered for this metric."
         )
 
+    elif (
+        assessment.availability
+        == "direct_explanation"
+    ):
+        availability = "Direct explanation"
+        badge_class = "evidence-direct"
         explanation = (
-            "No validated narrative "
-            "evidence query is registered "
-            "for this metric."
+            "Direct management evidence passed the "
+            "comparison and scope controls."
+        )
+        evidence_items = (
+            assessment.direct_explanations
+        )
+
+    elif (
+        assessment.availability
+        == "aligned_context_only"
+    ):
+        availability = "Context only"
+        badge_class = "evidence-context"
+        explanation = (
+            "Related management context exists, but it "
+            "cannot support a direct causal claim."
+        )
+        evidence_items = (
+            assessment.aligned_context
         )
 
     else:
-        availability = (
-            assessment.availability
-            .replace("_", " ")
-            .title()
+        availability = "Unavailable"
+        badge_class = "evidence-muted"
+        explanation = (
+            "No validated direct explanation supports "
+            "this period comparison."
         )
 
-        if (
-            assessment.availability
-            == "direct_explanation"
-        ):
-            explanation = (
-                "Validated direct management "
-                "explanation is available."
-            )
-
-        elif (
-            assessment.availability
-            == "aligned_context_only"
-        ):
-            explanation = (
-                "Related context exists, but it "
-                "cannot support a direct claim."
-            )
-
-        else:
-            explanation = (
-                "No validated direct explanation "
-                "supports this comparison."
-            )
-
-    with column:
+    with column, st.container(
+        border=True
+    ):
         st.markdown(
             f"**{metric_labels[metric_id]}**"
         )
 
         st.markdown(
-            f'<div class="evidence-state">'
+            f'<div class="evidence-badge {badge_class}">'
             f"{availability}"
-            f"</div>",
+            "</div>",
             unsafe_allow_html=True,
         )
 
-        st.write(
+        st.caption(
             explanation
         )
+
+        if evidence_items:
+            for evidence_item in (
+                evidence_items[:2]
+            ):
+                sentence = getattr(
+                    evidence_item,
+                    "sentence",
+                    None,
+                )
+
+                if sentence is None:
+                    continue
+
+                st.write(
+                    sentence.text
+                )
+
+                st.caption(
+                    "Source · "
+                    f"{sentence.document_id} · "
+                    f"p. {sentence.page_number}"
+                )
+
+            if len(evidence_items) > 2:
+                st.caption(
+                    f"+ {len(evidence_items) - 2} additional "
+                    "validated evidence item(s) in the "
+                    "research object."
+                )
 
 
 st.write("")
@@ -1687,68 +1826,149 @@ st.markdown(
 )
 
 st.caption(
-    "Every financial observation can be traced "
-    "back to the exact source document and page."
+    "Each metric expands into the deterministic source facts used in "
+    "the comparison, including document, page and table coordinates "
+    "when available."
 )
 
 for metric_id in metric_ids:
-    result = (
-        metric_results[
-            metric_id
-        ]
+    result = metric_results[
+        metric_id
+    ]
+
+    change = result.change
+
+    expander_label = (
+        f"{metric_labels[metric_id]} · "
+        f"{report.from_period} → {report.to_period}"
     )
 
     with st.expander(
-        metric_labels[
-            metric_id
-        ]
+        expander_label
     ):
+        comparison_columns = st.columns(
+            3,
+            gap="small",
+        )
+
+        with comparison_columns[0]:
+            st.metric(
+                report.from_period,
+                _format_metric_value(
+                    metric_id,
+                    change.from_value,
+                    metric_kinds,
+                ),
+            )
+
+        with comparison_columns[1]:
+            st.metric(
+                report.to_period,
+                _format_metric_value(
+                    metric_id,
+                    change.to_value,
+                    metric_kinds,
+                ),
+            )
+
+        with comparison_columns[2]:
+            st.metric(
+                "Change",
+                _format_percentage(
+                    change.percentage_change
+                ),
+            )
+
+        st.caption(
+            "Deterministic source facts"
+        )
+
         for fact in (
             result.audit_trail.source_facts
         ):
-            evidence = (
-                fact.evidence
-            )
+            evidence = fact.evidence
 
-            table_text = (
-                f" · table "
-                f"{evidence.table_number}"
-                if evidence.table_number
+            locator_parts = [
+                f"page {evidence.page_number}"
+            ]
+
+            if (
+                evidence.table_number
                 is not None
-                else ""
+            ):
+                locator_parts.append(
+                    f"table {evidence.table_number}"
+                )
+
+            if evidence.row_label:
+                locator_parts.append(
+                    f"row: {evidence.row_label}"
+                )
+
+            if evidence.column_label:
+                locator_parts.append(
+                    f"column: {evidence.column_label}"
+                )
+
+            source_url = (
+                _document_source_url(
+                    evidence.document_id,
+                    config,
+                )
             )
 
-            row_text = (
-                f" · {evidence.row_label}"
-                if evidence.row_label
-                else ""
-            )
+            with st.container(
+                border=True
+            ):
+                source_left, source_right = (
+                    st.columns(
+                        [3.2, 1],
+                        gap="medium",
+                    )
+                )
 
-            column_text = (
-                f" · {evidence.column_label}"
-                if evidence.column_label
-                else ""
-            )
+                with source_left:
+                    locator_text = (
+                        " · ".join(
+                            locator_parts
+                        )
+                    )
 
-            st.markdown(
-                f"""
-                <div class="source-box">
-                    <div class="source-title">
-                        {fact.period} ·
-                        {_format_decimal(fact.value)}
-                        {fact.unit}
-                    </div>
-                    <div class="source-meta">
-                        {evidence.document_id} ·
-                        page {evidence.page_number}
-                        {table_text}
-                        {row_text}
-                        {column_text}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+                    st.markdown(
+                        f"""
+                        <div class="source-box">
+                            <div class="source-title">
+                                {fact.period}
+                            </div>
+                            <div class="source-value">
+                                {_format_decimal(fact.value)} {fact.unit}
+                            </div>
+                            <div class="source-meta">
+                                {evidence.document_id}<br>
+                                {locator_text}<br>
+                                Fact ID · {fact.fact_id}
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+                with source_right:
+                    st.caption(
+                        "Source document"
+                    )
+
+                    if source_url:
+                        st.link_button(
+                            "Open report ↗",
+                            source_url,
+                            width="stretch",
+                        )
+                    else:
+                        st.caption(
+                            "No external source URL "
+                            "is registered."
+                        )
 
 
 st.divider()
