@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from equitylens.synthesis_llm import (
+    CLAIM_TYPES,
     DEFAULT_MODEL,
     SYNTHESIS_JSON_SCHEMA,
     OpenAISynthesisClient,
@@ -55,6 +56,34 @@ def _prompt():
             "RESEARCH_DATA_START\n{}\n"
             "RESEARCH_DATA_END"
         ),
+    )
+
+
+def _claim_variants():
+    return (
+        SYNTHESIS_JSON_SCHEMA[
+            "properties"
+        ]["claims"]["items"]["anyOf"]
+    )
+
+
+def _claim_variant(
+    claim_type,
+):
+    for variant in _claim_variants():
+        allowed_types = (
+            variant[
+                "properties"
+            ]["claim_type"]["enum"]
+        )
+
+        if allowed_types == [
+            claim_type
+        ]:
+            return variant
+
+    raise AssertionError(
+        f"Missing schema variant for {claim_type}."
     )
 
 
@@ -172,38 +201,75 @@ def test_schema_forbids_unknown_root_fields():
     )
 
 
+def test_schema_has_one_variant_per_claim_type():
+    variants = _claim_variants()
+
+    assert len(
+        variants
+    ) == len(
+        CLAIM_TYPES
+    )
+
+    schema_claim_types = {
+        variant[
+            "properties"
+        ]["claim_type"]["enum"][0]
+        for variant in variants
+    }
+
+    assert schema_claim_types == set(
+        CLAIM_TYPES
+    )
+
+
 def test_schema_forbids_unknown_claim_fields():
-    claim_schema = (
-        SYNTHESIS_JSON_SCHEMA[
-            "properties"
-        ]["claims"]["items"]
-    )
-
-    assert (
-        claim_schema[
-            "additionalProperties"
-        ]
-        is False
-    )
+    for variant in _claim_variants():
+        assert (
+            variant[
+                "additionalProperties"
+            ]
+            is False
+        )
 
 
-def test_schema_restricts_claim_types():
-    claim_types = (
-        SYNTHESIS_JSON_SCHEMA[
-            "properties"
-        ]["claims"]["items"][
-            "properties"
-        ]["claim_type"]["enum"]
-    )
-
-    assert set(
-        claim_types
-    ) == {
+@pytest.mark.parametrize(
+    "claim_type",
+    [
         "financial_observation",
         "management_explanation",
         "consistency_observation",
-        "guidance_update",
-    }
+    ],
+)
+def test_historical_claims_require_null_target_period(
+    claim_type,
+):
+    variant = _claim_variant(
+        claim_type
+    )
+
+    assert (
+        variant[
+            "properties"
+        ]["target_period"]
+        == {
+            "type": "null",
+        }
+    )
+
+
+def test_guidance_claim_requires_string_target_period():
+    variant = _claim_variant(
+        "guidance_update"
+    )
+
+    assert (
+        variant[
+            "properties"
+        ]["target_period"]
+        == {
+            "type": "string",
+        }
+    )
 
 
 def test_empty_model_is_rejected():

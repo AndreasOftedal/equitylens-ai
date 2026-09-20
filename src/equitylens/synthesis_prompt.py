@@ -40,6 +40,16 @@ STRICT RULES:
     than weakening these rules.
 18. Use limitations to state important evidence gaps.
 19. Return JSON only. Do not use Markdown or explanatory text outside JSON.
+20. target_period is reserved exclusively for forward-looking guidance.
+    A guidance_update must use the exact target_period supplied in
+    RESEARCH_DATA.
+21. financial_observation, management_explanation, and
+    consistency_observation claims must always set target_period to null.
+    Do not put the current reporting period, previous reporting period,
+    quarter, half-year, or year in target_period for these claim types.
+22. target_period does not describe when a historical financial observation
+    occurred. Historical periods belong only in the claim text and the
+    deterministic source data.
 
 OUTPUT FORMAT:
 
@@ -52,13 +62,35 @@ OUTPUT FORMAT:
       "claim_type": "financial_observation | management_explanation | consistency_observation | guidance_update",
       "text": "string",
       "metric_id": "string",
-      "target_period": "string or null",
+      "target_period": "exact guidance target period for guidance_update; null for every other claim type",
       "source_fact_ids": ["string"],
       "evidence_sentence_ids": ["string"]
     }
   ],
   "limitations": ["string"]
 }
+
+CLAIM FIELD REQUIREMENTS:
+
+- financial_observation:
+  target_period must be null.
+  Cite all deterministic source_fact_ids.
+  Do not cite narrative evidence.
+
+- management_explanation:
+  target_period must be null.
+  Cite all deterministic source_fact_ids and at least one valid direct
+  evidence_sentence_id.
+
+- consistency_observation:
+  target_period must be null.
+  Cite all deterministic source_fact_ids and at least one valid direct
+  evidence_sentence_id.
+
+- guidance_update:
+  target_period must be the exact target_period supplied for that guidance
+  item or guidance change.
+  Do not use historical source_fact_ids or narrative evidence_sentence_ids.
 
 The final draft must be useful to an equity analyst while remaining strictly
 inside the supplied evidence boundary.

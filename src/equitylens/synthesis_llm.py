@@ -8,6 +8,62 @@ from equitylens.synthesis_prompt import SynthesisPrompt
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_REASONING_EFFORT = "low"
 
+CLAIM_TYPES = (
+    "financial_observation",
+    "management_explanation",
+    "consistency_observation",
+    "guidance_update",
+)
+
+
+def _claim_schema(
+    claim_type: str,
+    target_period_schema: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "claim_id": {
+                "type": "string",
+            },
+            "claim_type": {
+                "type": "string",
+                "enum": [
+                    claim_type,
+                ],
+            },
+            "text": {
+                "type": "string",
+            },
+            "metric_id": {
+                "type": "string",
+            },
+            "target_period": target_period_schema,
+            "source_fact_ids": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                },
+            },
+            "evidence_sentence_ids": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                },
+            },
+        },
+        "required": [
+            "claim_id",
+            "claim_type",
+            "text",
+            "metric_id",
+            "target_period",
+            "source_fact_ids",
+            "evidence_sentence_ids",
+        ],
+    }
+
 
 SYNTHESIS_JSON_SCHEMA = {
     "type": "object",
@@ -22,58 +78,31 @@ SYNTHESIS_JSON_SCHEMA = {
         "claims": {
             "type": "array",
             "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "claim_id": {
-                        "type": "string",
-                    },
-                    "claim_type": {
-                        "type": "string",
-                        "enum": [
-                            "financial_observation",
-                            "management_explanation",
-                            "consistency_observation",
-                            "guidance_update",
-                        ],
-                    },
-                    "text": {
-                        "type": "string",
-                    },
-                    "metric_id": {
-                        "type": "string",
-                    },
-                    "target_period": {
-                        "anyOf": [
-                            {
-                                "type": "string",
-                            },
-                            {
-                                "type": "null",
-                            },
-                        ],
-                    },
-                    "source_fact_ids": {
-                        "type": "array",
-                        "items": {
+                "anyOf": [
+                    _claim_schema(
+                        "financial_observation",
+                        {
+                            "type": "null",
+                        },
+                    ),
+                    _claim_schema(
+                        "management_explanation",
+                        {
+                            "type": "null",
+                        },
+                    ),
+                    _claim_schema(
+                        "consistency_observation",
+                        {
+                            "type": "null",
+                        },
+                    ),
+                    _claim_schema(
+                        "guidance_update",
+                        {
                             "type": "string",
                         },
-                    },
-                    "evidence_sentence_ids": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                        },
-                    },
-                },
-                "required": [
-                    "claim_id",
-                    "claim_type",
-                    "text",
-                    "metric_id",
-                    "target_period",
-                    "source_fact_ids",
-                    "evidence_sentence_ids",
+                    ),
                 ],
             },
         },
