@@ -174,6 +174,18 @@ def _validate_consistency_observation(
             "least one direct evidence sentence."
         )
 
+    if len(
+        claim.evidence_sentence_ids
+    ) != len(
+        set(
+            claim.evidence_sentence_ids
+        )
+    ):
+        raise ValueError(
+            "Evidence sentence citations must be "
+            "unique within a claim."
+        )
+
     unsupported = (
         set(
             claim.evidence_sentence_ids
