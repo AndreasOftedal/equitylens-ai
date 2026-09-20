@@ -4,6 +4,7 @@ from equitylens.narrative_reranker import (
     NarrativeEvidenceReranker,
     calculate_narrative_score,
     calculate_scope_score,
+    calculate_temporal_score,
 )
 from equitylens.retrieval import RetrievalResult
 from equitylens.text_chunks import TextChunk
@@ -173,6 +174,57 @@ def test_general_narrative_remains_eligible_for_group_query():
     ) == 1.0
 
 
+def test_historical_driver_query_penalises_forward_looking_section():
+    chunk = _chunk(
+        chunk_id="guidance",
+        page_number=16,
+        text=(
+            "Production guidance for 2026 "
+            "is 380-400 mboepd."
+        ),
+        section_context="OUTLOOK Guidance for 2026",
+    )
+
+    assert calculate_temporal_score(
+        query="What drove production?",
+        chunk=chunk,
+    ) == -2.0
+
+
+def test_guidance_query_does_not_penalise_forward_looking_section():
+    chunk = _chunk(
+        chunk_id="guidance",
+        page_number=16,
+        text=(
+            "Production guidance for 2026 "
+            "is 380-400 mboepd."
+        ),
+        section_context="OUTLOOK Guidance for 2026",
+    )
+
+    assert calculate_temporal_score(
+        query="What is the production guidance?",
+        chunk=chunk,
+    ) == 0.0
+
+
+def test_historical_driver_query_does_not_penalise_historical_section():
+    chunk = _chunk(
+        chunk_id="historical",
+        page_number=8,
+        text=(
+            "Production decreased due to "
+            "planned maintenance."
+        ),
+        section_context="Operational review",
+    )
+
+    assert calculate_temporal_score(
+        query="What drove production?",
+        chunk=chunk,
+    ) == 0.0
+
+
 def test_scope_aware_reranker_can_promote_group_evidence():
     segment_chunk = _chunk(
         chunk_id="segment",
@@ -220,6 +272,53 @@ def test_scope_aware_reranker_can_promote_group_evidence():
     assert reranked[0].chunk.chunk_id == "group"
     assert reranked[0].scope_score == 3.0
     assert reranked[1].scope_score == -3.0
+
+
+def test_driver_query_prefers_historical_explanation_over_guidance():
+    guidance_chunk = _chunk(
+        chunk_id="guidance",
+        page_number=16,
+        text=(
+            "Guidance for 2026. Production: "
+            "380-400 mboepd."
+        ),
+        section_context="OUTLOOK Guidance for 2026",
+    )
+
+    historical_chunk = _chunk(
+        chunk_id="historical-explanation",
+        page_number=8,
+        text=(
+            "Production decreased due to "
+            "planned maintenance during the quarter."
+        ),
+        section_context="Operational review",
+    )
+
+    results = (
+        _result(
+            chunk=guidance_chunk,
+            score=8.0,
+            rank=1,
+        ),
+        _result(
+            chunk=historical_chunk,
+            score=6.0,
+            rank=2,
+        ),
+    )
+
+    reranked = NarrativeEvidenceReranker().rerank(
+        results=results,
+        query="What drove production?",
+    )
+
+    assert (
+        reranked[0].chunk.chunk_id
+        == "historical-explanation"
+    )
+
+    assert reranked[1].temporal_score == -2.0
 
 
 def test_reranker_preserves_source_provenance():

@@ -47,6 +47,17 @@ _DEFINITION_PHRASES = (
     "reconciliation of adjusted",
 )
 
+_FORWARD_LOOKING_SECTION_PHRASES = (
+    "outlook",
+    "guidance",
+)
+
+_HISTORICAL_DRIVER_QUERY_PHRASES = (
+    "what drove",
+    "what caused",
+    "why did",
+)
+
 _QUERY_SCOPE_ALIASES = {
     "ep_norway": (
         "e&p norway",
@@ -84,6 +95,7 @@ class RerankedResult:
     final_score: float
     rank: int
     scope_score: float = 0.0
+    temporal_score: float = 0.0
 
 
 def _normalize_scope_text(
@@ -196,6 +208,52 @@ def calculate_scope_score(
     return -3.0
 
 
+def calculate_temporal_score(
+    query: str,
+    chunk: TextChunk,
+) -> float:
+    """
+    Score whether a chunk matches the temporal intent of the query.
+
+    Historical driver questions should prefer explanatory narrative
+    about realised performance over explicitly forward-looking
+    outlook or guidance sections. Queries that explicitly ask about
+    guidance or outlook remain unaffected.
+    """
+
+    normalized_query = _normalize_scope_text(
+        query
+    )
+
+    if (
+        "guidance" in normalized_query
+        or "outlook" in normalized_query
+    ):
+        return 0.0
+
+    is_historical_driver_query = any(
+        phrase in normalized_query
+        for phrase in _HISTORICAL_DRIVER_QUERY_PHRASES
+    )
+
+    if not is_historical_driver_query:
+        return 0.0
+
+    normalized_context = _normalize_scope_text(
+        chunk.section_context
+    )
+
+    is_forward_looking_section = any(
+        phrase in normalized_context
+        for phrase in _FORWARD_LOOKING_SECTION_PHRASES
+    )
+
+    if is_forward_looking_section:
+        return -2.0
+
+    return 0.0
+
+
 def _numeric_token_ratio(text: str) -> float:
     tokens = text.split()
 
@@ -295,8 +353,8 @@ def calculate_narrative_score(
 
 class NarrativeEvidenceReranker:
     """
-    Deterministically rerank lexical retrieval candidates using both
-    narrative quality and analytical scope.
+    Deterministically rerank lexical retrieval candidates using
+    narrative quality, analytical scope and temporal intent.
     """
 
     def rerank(
@@ -334,10 +392,16 @@ class NarrativeEvidenceReranker:
                 chunk=result.chunk,
             )
 
+            temporal_score = calculate_temporal_score(
+                query=query,
+                chunk=result.chunk,
+            )
+
             final_score = (
                 result.score
                 + narrative_score
                 + scope_score
+                + temporal_score
             )
 
             scored_results.append(
@@ -345,6 +409,7 @@ class NarrativeEvidenceReranker:
                     result,
                     narrative_score,
                     scope_score,
+                    temporal_score,
                     final_score,
                 )
             )
@@ -352,7 +417,7 @@ class NarrativeEvidenceReranker:
         ranked_results = sorted(
             scored_results,
             key=lambda item: (
-                -item[3],
+                -item[4],
                 item[0].rank,
                 item[0].chunk.document_id,
                 item[0].chunk.page_number,
@@ -371,6 +436,7 @@ class NarrativeEvidenceReranker:
                 retrieval_score=result.score,
                 narrative_score=narrative_score,
                 scope_score=scope_score,
+                temporal_score=temporal_score,
                 final_score=final_score,
                 rank=rank,
             )
@@ -378,6 +444,7 @@ class NarrativeEvidenceReranker:
                 result,
                 narrative_score,
                 scope_score,
+                temporal_score,
                 final_score,
             ) in enumerate(
                 ranked_results,
