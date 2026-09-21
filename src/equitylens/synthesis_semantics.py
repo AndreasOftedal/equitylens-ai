@@ -28,6 +28,25 @@ _TENSION_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+_GUIDANCE_UNCHANGED_PATTERNS = (
+    r"\bguidance\b.{0,120}\bremained\s+(?:broadly\s+)?unchanged\b",
+    r"\bguidance\b.{0,120}\b(?:was|is|were|are)\s+(?:broadly\s+)?unchanged\b",
+    r"\bguidance\b.{0,120}\bstayed\s+(?:broadly\s+)?unchanged\b",
+    r"\bremained\s+(?:broadly\s+)?unchanged\b",
+    r"\bstayed\s+(?:broadly\s+)?unchanged\b",
+    r"\bunchanged\s+guidance\b",
+)
+
+_GUIDANCE_INCREASE_PATTERNS = (
+    r"\bguidance\b.{0,120}\b(?:increased|raised|upgraded)\b",
+    r"\b(?:increased|raised|upgraded)\s+guidance\b",
+)
+
+_GUIDANCE_DECREASE_PATTERNS = (
+    r"\bguidance\b.{0,120}\b(?:decreased|lowered|reduced|downgraded)\b",
+    r"\b(?:decreased|lowered|reduced|downgraded)\s+guidance\b",
+)
+
 
 def _extract_numbers(
     text: str,
@@ -366,6 +385,72 @@ def _guidance_allowed_numbers(
     return allowed
 
 
+def _contains_pattern(
+    text: str,
+    patterns: tuple[str, ...],
+) -> bool:
+    return any(
+        re.search(
+            pattern,
+            text,
+            re.IGNORECASE,
+        )
+        is not None
+        for pattern in patterns
+    )
+
+
+def _detect_guidance_change_direction(
+    text: str,
+) -> str:
+    """
+    Detect how guidance itself changed.
+
+    This deliberately differs from financial narrative
+    direction detection. A claim such as
+    "production growth guidance remained unchanged at 3%"
+    describes unchanged guidance even though the underlying
+    guidance target contains the word "growth".
+    """
+
+    has_unchanged = _contains_pattern(
+        text,
+        _GUIDANCE_UNCHANGED_PATTERNS,
+    )
+
+    has_increase = _contains_pattern(
+        text,
+        _GUIDANCE_INCREASE_PATTERNS,
+    )
+
+    has_decrease = _contains_pattern(
+        text,
+        _GUIDANCE_DECREASE_PATTERNS,
+    )
+
+    directions_detected = sum(
+        (
+            has_unchanged,
+            has_increase,
+            has_decrease,
+        )
+    )
+
+    if directions_detected == 0:
+        return "unknown"
+
+    if directions_detected > 1:
+        return "mixed"
+
+    if has_unchanged:
+        return "unchanged"
+
+    if has_increase:
+        return "increase"
+
+    return "decrease"
+
+
 def _validate_guidance_claim(
     synthesis_input: SynthesisInput,
     claim: SynthesisClaim,
@@ -387,7 +472,7 @@ def _validate_guidance_claim(
         )
 
         detected = (
-            detect_narrative_direction(
+            _detect_guidance_change_direction(
                 claim.text
             )
         )
