@@ -32,6 +32,8 @@ _GUIDANCE_UNCHANGED_PATTERNS = (
     r"\bguidance\b.{0,120}\bremained\s+(?:broadly\s+)?unchanged\b",
     r"\bguidance\b.{0,120}\b(?:was|is|were|are)\s+(?:broadly\s+)?unchanged\b",
     r"\bguidance\b.{0,120}\bstayed\s+(?:broadly\s+)?unchanged\b",
+    r"\b(?:was|were|is|are)\s+(?:broadly\s+)?unchanged\b",
+    r"\bremains?\s+(?:broadly\s+)?unchanged\b",
     r"\bremained\s+(?:broadly\s+)?unchanged\b",
     r"\bstayed\s+(?:broadly\s+)?unchanged\b",
     r"\bunchanged\s+guidance\b",
